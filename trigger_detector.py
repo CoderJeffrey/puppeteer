@@ -119,6 +119,7 @@ class SnipsTriggerDetector(TriggerDetector):
         See documentation of the corresponding method in TriggerDetector.
         """
         for paths in self._paths_list:
+            #print(paths)
             engine = SnipsEngine.load(paths, self._nlp)
             self._engines.append(engine)
             self._trigger_names.extend(engine.intent_names)
@@ -208,6 +209,7 @@ class TriggerDetectorLoader:
             detector: The trigger detector.
         """
         for trigger_name in detector.trigger_names:
+            #print('TDL: trigger_name: {}'.format(trigger_name))
             self._registered[trigger_name] = detector
     
     def register_detector_for_agenda(self, agenda_name: str, detector: TriggerDetector) -> None:
@@ -247,16 +249,20 @@ class TriggerDetectorLoader:
         detectors = []
         snips_trigger_paths = []
         for trigger_name in trigger_names:
+            #print(trigger_name)
             if (agenda_name in self._registered_by_agenda and
                     trigger_name in self._registered_by_agenda[agenda_name]):
+                #print(1)
                 detector = self._registered_by_agenda[agenda_name][trigger_name]
                 detector.load()
                 detectors.append(detector)
             elif trigger_name in self._registered:
+                #print(2)
                 detector = self._registered[trigger_name]
                 detector.load()
                 detectors.append(detector)
             else:
+                #print(3)
                 # See if this is a standard Snips trigger.
                 def lookfor(dirname: str, rootpath: str) -> Optional[str]:
                     for (root, dirs, files) in os.walk(rootpath):
@@ -265,14 +271,20 @@ class TriggerDetectorLoader:
                     return None
                 if agenda_name in self._snips_paths:
                     path = lookfor(trigger_name, self._snips_paths[agenda_name])
+                    #print(4)
+                    #print(path)
                     if path is not None:
                         snips_trigger_paths.append(path)
                 elif self._default_snips_path is not None:
                     path = lookfor(trigger_name, self._default_snips_path)
+                    #print(5)
+                    #print(path)
                     if path is not None:
                         snips_trigger_paths.append(path)
                     else:
                         raise ValueError("Could not find detector for trigger: %s" % trigger_name)
+        #print(6)
+        #print(snips_trigger_paths)
         # Get standard Snips trigger detectors.
         if snips_trigger_paths:
             nlp = SpacyEngine.load()

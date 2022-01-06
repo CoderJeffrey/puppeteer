@@ -18,7 +18,12 @@ class MyTriggerDetectorLoader(TriggerDetectorLoader):
         # Used by get_location
         nlp = SpacyEngine.load()
         rootdir = dirname(realpath(__file__))
-        snips_paths = [join(rootdir, "../../turducken/data/training/puppeteer/get_location/i_live")]
-        cities_path = join(rootdir, "../../turducken/data/dictionaries/cities.txt")
+        #snips_paths = [join(rootdir, "../../turducken/data/training/puppeteer/get_location/i_live")]
+        #cities_path = join(rootdir, "../../turducken/data/dictionaries/cities.txt")
+        snips_paths = [join(rootdir, "../../training_data/get_location/i_live")]
+        #print('MTGL: snips_paths={}'.format(snips_paths))
+        cities_path = join(rootdir, "../../dictionaries/cities.txt")
+        #print('MTGL: cities_paths={}'.format(cities_path))
         self.register_detector(CityInExtractionsTriggerDetector())
         self.register_detector(LocationInMessageTriggerDetector(snips_paths, cities_path, nlp))
+

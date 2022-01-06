@@ -1,7 +1,6 @@
 import abc
 from typing import Any, Dict, List, Optional, Tuple, Type
 
-import matplotlib.pyplot as plt
 import networkx as nx
 import yaml
 
@@ -233,7 +232,9 @@ class AgendaState:
     The update() method is the main method for updating the agenda level state, based on extractions and observations
     made since the last time step.
     """
-    def __init__(self, agenda: "Agenda") -> None:
+    def __init__(self, agenda: "Agenda", 
+                fig = None,
+                ax = None) -> None:
         """Initializes a new AgendaState.
 
         Args:
@@ -245,6 +246,18 @@ class AgendaState:
         self._state_probabilities = agenda.state_probabilities_cls(agenda)
         self._pos = None
         self._log = Logger()
+        if fig != None and ax != None:
+            self._fig = fig
+            self._ax = ax
+            self._g = nx.MultiDiGraph()
+            # Add states
+            for s in self._agenda.state_names:
+                self._g.add_node(s)
+            self._g.add_node('ERROR_STATE')
+            # Add transitions
+            for s0 in self._agenda.state_names:
+                for s1 in self._agenda.transition_connected_state_names(s0):
+                    self._g.add_edge(s0, s1)
 
     @property
     def transition_trigger_probabilities(self) -> "TriggerProbabilities":
@@ -301,47 +314,30 @@ class AgendaState:
         """Reset probabilities to the initial values for a newly started agenda."""
         self._state_probabilities.reset()
 
-    def plot_state(self, fig: plt.Figure) -> None:
-        """Plot the state graph.
-
-        Args:
-            fig: The figure to plot to.
-        """
-        g = nx.MultiDiGraph()
-        
-        # Add states
-        for s in self._agenda.state_names:
-            g.add_node(s)
-        g.add_node('ERROR_STATE')
-        
-        for s0 in self._agenda.state_names:
-            # Add transitions
-            for s1 in self._agenda.transition_connected_state_names(s0):
-                g.add_edge(s0, s1)
+    def plot(self) -> None:
+        """ Plot the state graph."""
+        self._ax.clear()
         
         # Color nodes according to probability map.
         color_transition = ['#fff0e6', '#ffe0cc', '#ffd1b3', '#ffc299', '#ffb380', '#ffa366', '#ff944d', '#ff8533',
                             '#ff751a', '#ff6600']
-        color_map = []
+
         labels = {}
-        for node in g:
+        color_map = []
+        for node in self._g:
             prob = self._state_probabilities.probability(node)
-            labels[node] = "%s\np=%.2f" % (node, prob)
+            labels[node] = '{}\np={:.2f}'.format(node, prob)
 
-            prob = int(round(prob * 10))
-            if prob > 0:
-                prob = prob - 1
+            lvl = int(round(prob * 10)) # level or index in color_transition
+            if lvl > 0:
+                lvl = lvl - 1
 
-            if prob < len(color_transition):
-                color_map.append(color_transition[prob])
+            if lvl < len(color_transition):
+                color_map.append(color_transition[lvl])
             else:
                 color_map.append('grey')
-        
-        # Draw
-        plt.figure(fig.number)
-        if self._pos is None:
-            self._pos = nx.circular_layout(g)
-        nx.draw(g, pos=self._pos, node_color=color_map, labels=labels)    
+        self._ax.set_title(self._agenda.name)
+        nx.draw(G=self._g, pos=nx.circular_layout(self._g), ax=self._ax, node_color=color_map, labels=labels, node_size=2000)
 
 
 class TriggerProbabilities(abc.ABC):
@@ -440,12 +436,15 @@ class DefaultTriggerProbabilities(TriggerProbabilities):
         trigger_map: Dict[str, float] = {}
         non_trigger_probs: List[float] = []
         new_extractions = Extractions()
-        
+       
         for trigger_detector in self.trigger_detectors:
+            print(trigger_detector)
             self._log.begin(f"Trigger detector with trigger names {trigger_detector.trigger_names}")
             (trigger_map_out, non_trigger_prob, extractions) = trigger_detector.trigger_probabilities(observations,
                                                                                                       old_extractions)
 
+            print('trigger_map_out: {}'.format(trigger_map_out))
+            print('non_trigger_prob: {}'.format(non_trigger_prob))
             if extractions.names:
                 self._log.begin("Extractions")
                 for name in extractions.names:
@@ -588,6 +587,7 @@ class DefaultStateProbabilities(StateProbabilities):
         """
         # Check if the last of the actions taken "belongs" to this agenda. Earlier
         # actions may be the finishing actions of a deactivated agenda.
+        print('actions: {}'.format(actions))
         if actions and not actions[-1] in self._agenda.actions:
             return
         
@@ -603,17 +603,21 @@ class DefaultStateProbabilities(StateProbabilities):
 
         # Chance we actually have an event:
         p_event = 1.0 - non_event_prob
+        print('p_event: {}'.format(p_event))
         
         # For each state in the machine, do:
         for st in self._agenda.state_names:
             to_move = current_probability_map[st] * p_event
             new_probability_map[st] = max(0.05, current_probability_map[st] - to_move, new_probability_map[st])
+        print('current_prob_map: {}'.format(current_probability_map))
+        print('new_prob_map: {}'.format(new_probability_map))
                       
         # For each state in the machine, do:
         for st in self._agenda.state_names:
             to_move = current_probability_map[st] * p_event
             
             if round(to_move, 1) > 0.0:
+                print('to_move: {}'.format(to_move))
                 for event in trigger_map:
                     trans_prob = to_move * trigger_map[event]
                     if event in self._agenda.transition_trigger_names(st):
@@ -1456,6 +1460,7 @@ class Agenda:
         detectors = trigger_detector_loader.load(agenda.name, trigger_names, snips_multi_engine=snips_multi_engine)
 
         for detector in detectors:
+            #print('Transition TGD: {}'.format(detector))
             agenda.add_transition_trigger_detector(detector)
 
         # Kickoff triggers
@@ -1463,5 +1468,6 @@ class Agenda:
         detectors = trigger_detector_loader.load(agenda.name, trigger_names, snips_multi_engine=snips_multi_engine)
 
         for detector in detectors:
+            #print('Kickoff TGD: {}'.format(detector))
             agenda.add_kickoff_trigger_detector(detector)
         return agenda

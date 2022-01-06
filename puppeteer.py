@@ -1,8 +1,8 @@
 import abc
 from typing import List, Dict, Tuple, Type
 
-import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.pyplot as plt
 
 from .agenda import Action, Agenda, AgendaState
 from .logging import Logger
@@ -46,11 +46,11 @@ class PuppeteerPolicy(abc.ABC):
             A list of Action objects representing actions to take, in given order.
         """
         raise NotImplementedError()
-
+'''
     @abc.abstractmethod
     def plot_state(self, fig: plt.Figure, agenda_states: Dict[str, AgendaState]) -> None:
         raise NotImplementedError()
-
+'''
 
 class DefaultPuppeteerPolicy(PuppeteerPolicy):
     """Handles inter-agenda decisions about behavior.
@@ -206,7 +206,7 @@ class DefaultPuppeteerPolicy(PuppeteerPolicy):
         self._log.add("Finishing act phase without a current agenda.")
 
         return actions
-
+'''
     def plot_state(self, fig: plt.Figure, agenda_states: Dict[str, AgendaState]) -> None:
         """Plot the state of the current agenda, if any.
 
@@ -216,6 +216,7 @@ class DefaultPuppeteerPolicy(PuppeteerPolicy):
         """
         plt.figure(fig.number)
         plt.clf()
+
         if self._current_agenda is None:
             plt.title("No current agenda")
         else:
@@ -231,7 +232,7 @@ class DefaultPuppeteerPolicy(PuppeteerPolicy):
             agenda_state = agenda_states[self._current_agenda.name]
             agenda_state.plot_state(fig)
         plt.show()
-
+'''
 
 class Puppeteer:
     """Agendas-based dialog bot.
@@ -276,14 +277,29 @@ class Puppeteer:
             plot_state: If true, the updated state of the current agenda is plotted after each turn.
         """
         self._agendas = agendas
-        self._agenda_states = {a.name: AgendaState(a) for a in agendas}
+        #self._agenda_states = {a.name: AgendaState(a, plot_state) for a in agendas}
         self._last_actions: List[Action] = []
         self._policy = policy_cls(agendas)
+        self._plot_state = plot_state
+
+        if self._plot_state:
+            plt.ion()
+            agenda_states = {}
+            for a in agendas:
+                fig, ax = plt.subplots()
+                agenda_states[a.name] = AgendaState(a, fig, ax)
+            self._agenda_states = agenda_states
+        else:
+            self._agenda_states = {a.name: AgendaState(a, None, None) for a in agendas}
+
+
+        '''
         if plot_state:
             self._fig = plt.figure()
             self._policy.plot_state(self._fig, self._agenda_states)
         else:
             self._fig = None
+        '''
         self._log = Logger()
 
     @property
@@ -328,6 +344,11 @@ class Puppeteer:
         for agenda_state in self._agenda_states.values():
             extractions = agenda_state.update(self._last_actions, observations, old_extractions)
             new_extractions.update(extractions)
+        ######
+        if self._plot_state:
+            for agenda_state in self._agenda_states.values():
+                agenda_state.plot()
+        ######
         self._log.end()
         self._log.begin("Act phase")
         self._last_actions = self._policy.act(self._agenda_states)
@@ -342,6 +363,8 @@ class Puppeteer:
             self._log.add(f"{name}: '{new_extractions.extraction(name)}'")
         self._log.end()
         self._log.end()
+        '''
         if self._fig is not None:
             self._policy.plot_state(self._fig, self._agenda_states)
+        '''
         return self._last_actions, new_extractions
