@@ -15,12 +15,27 @@ def _check_dict_fields(cls: Type, d: Dict[str, Any], fields: List[Tuple[str, Typ
         if name not in d:
             raise ValueError("Missing field for %s: %s" % (cls.__name__, name))
         elif not isinstance(d[name], typ):
-            raise TypeError("Field %s for %s should be of type %s, but got %s" % (name, cls.__name__, typ.__name__,
-                                                                                  type(d["name"]).__name__))
+            raise TypeError("Field %s for %s should be of type %s, but got %s" % (name, cls.__name__, typ.__name__, type(d[name]).__name__))
     unexpected = frozenset(d).difference(list(zip(*fields))[0])
     if unexpected:
         raise ValueError("Unexpected field(s) for %s: %s" % (cls.__name__, unexpected))
 
+def _check_policy_dict_fields(cls: Type, d: Dict[str, Any], fields: List[Tuple[str, Type]]) -> Dict[str, Any]:
+    for (name, typ) in fields:
+        if name not in d:
+            raise ValueError("Missing field for %s: %s" % (cls.__name__, name))
+        elif not isinstance(d[name], typ):
+            if (name == "absolute_accept_thresh" or name == "min_accept_thresh_w_differential" or \
+                name == "accept_thresh_differential" or name == "kickoff_thresh"):
+                if isinstance(d[name], int):
+                    d[name] = d[name] / 1.0
+            else:
+                raise TypeError("Field %s for %s should be of type %s, but got %s" % (name, cls.__name__, typ.__name__, type(d[name]).__name__))
+    unexpected = frozenset(d).difference(list(zip(*fields))[0])
+    if unexpected:
+        raise ValueError("Unexpected field(s) for %s: %s" % (cls.__name__, unexpected))
+
+    return d
 
 class AgendaAttribute(abc.ABC):
     """Abstract class for attributes of an agenda, such as states, triggers and actions."""
@@ -438,13 +453,13 @@ class DefaultTriggerProbabilities(TriggerProbabilities):
         new_extractions = Extractions()
        
         for trigger_detector in self.trigger_detectors:
-            print(trigger_detector)
+            #print(trigger_detector)
             self._log.begin(f"Trigger detector with trigger names {trigger_detector.trigger_names}")
             (trigger_map_out, non_trigger_prob, extractions) = trigger_detector.trigger_probabilities(observations,
                                                                                                       old_extractions)
 
-            print('trigger_map_out: {}'.format(trigger_map_out))
-            print('non_trigger_prob: {}'.format(non_trigger_prob))
+            #print('trigger_map_out: {}'.format(trigger_map_out))
+            #print('non_trigger_prob: {}'.format(non_trigger_prob))
             if extractions.names:
                 self._log.begin("Extractions")
                 for name in extractions.names:
@@ -587,7 +602,7 @@ class DefaultStateProbabilities(StateProbabilities):
         """
         # Check if the last of the actions taken "belongs" to this agenda. Earlier
         # actions may be the finishing actions of a deactivated agenda.
-        print('actions: {}'.format(actions))
+        #print('actions: {}'.format(actions))
         if actions and not actions[-1] in self._agenda.actions:
             return
         
@@ -603,14 +618,14 @@ class DefaultStateProbabilities(StateProbabilities):
 
         # Chance we actually have an event:
         p_event = 1.0 - non_event_prob
-        print('p_event: {}'.format(p_event))
+        #print('p_event: {}'.format(p_event))
         
         # For each state in the machine, do:
         for st in self._agenda.state_names:
             to_move = current_probability_map[st] * p_event
             new_probability_map[st] = max(0.05, current_probability_map[st] - to_move, new_probability_map[st])
-        print('current_prob_map: {}'.format(current_probability_map))
-        print('new_prob_map: {}'.format(new_probability_map))
+        #print('current_prob_map: {}'.format(current_probability_map))
+        #print('new_prob_map: {}'.format(new_probability_map))
                       
         # For each state in the machine, do:
         for st in self._agenda.state_names:
@@ -835,7 +850,7 @@ class DefaultAgendaPolicy(AgendaPolicy):
         Returns:
             The new policy object.
         """
-        _check_dict_fields(cls, d, [("reuse", bool), ("max_transitions", int), ("absolute_accept_thresh", float),
+        d = _check_policy_dict_fields(cls, d, [("reuse", bool), ("max_transitions", int), ("absolute_accept_thresh", float),
                                     ("min_accept_thresh_w_differential", float), ("accept_thresh_differential", float),
                                     ("kickoff_thresh", float)])
         return cls(agenda, d["reuse"], d["max_transitions"],
@@ -843,6 +858,12 @@ class DefaultAgendaPolicy(AgendaPolicy):
                    d["min_accept_thresh_w_differential"],
                    d["accept_thresh_differential"],
                    d["kickoff_thresh"])
+
+    def __str__(self):
+        return("reuse: {}, max_transitions: {}, absolute_accept_thresh: {}, min_accept_thresh_w_differential: {}, "\
+                "accept_thresh_differential: {}, kickoff_thresh: {}".format(self._reuse, self._max_transitions, \
+                self._absolute_accept_thresh, self._min_accept_thresh_w_differential, self._accept_thresh_differential, \
+                self._kickoff_thresh))
 
     def made_progress(self, state: AgendaState) -> bool:
         """Returns true if the agenda made progress in the last turn.
@@ -1245,6 +1266,7 @@ class Agenda:
                      trigger_probabilities_cls=trigger_probabilities_cls)
         # Special handling of policy
         agenda._policy = policy_cls.from_dict(d["policy"], agenda)
+        #print(str(agenda._policy))
         # Restore all other fields, as stored in dict
         for state in states.values():
             agenda.add_state(state)
@@ -1471,3 +1493,25 @@ class Agenda:
             #print('Kickoff TGD: {}'.format(detector))
             agenda.add_kickoff_trigger_detector(detector)
         return agenda
+
+    def __str__(self):
+        states = str([st for st in self._states.keys()])
+        kickoff_triggers = str([kt for kt in self._kickoff_triggers.keys()])
+        transition_triggers = str([tt for tt in self._transition_triggers.keys()])
+        actions = str([act for act in self._actions.keys()])
+        policy = str(self._policy)
+
+        return  '=== AGENDA ===\n'\
+                '{}\n' \
+                '=== STATES ===\n' \
+                '{}\n' \
+                '=== KICKOFF TRIGGERS ===\n'\
+                '{}\n' \
+                '=== TRANSITIONS TRIGGERS ===\n'\
+                '{}\n' \
+                '=== ACTIONS ===\n'\
+                '{}\n' \
+                '=== POLICY ===\n'\
+                '{}\n' \
+                .format(self._name, states, kickoff_triggers, transition_triggers, actions, policy)
+
