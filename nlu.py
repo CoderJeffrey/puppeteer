@@ -179,12 +179,16 @@ class SnipsEngine:
         if paths not in cls._engines:
             filenames = []
             for path in paths:
+                #print(1, path)
                 for wpath, _, files in walk(path):
+                    #print(2, wpath, files)
                     for filename in files:
+                        #print(3, filename)
                         fullpath = join(wpath, filename)
                         filenames.append(fullpath)
             # The intent name is the name of the leaf folder
             intent_names = [basename(p) for p in paths]
+            #print(paths, filenames, intent_names)
             cls._engines[paths] = cls.train(filenames, intent_names, nlp)
         return cls._engines[paths]
 
@@ -218,9 +222,14 @@ class SnipsEngine:
                     json_dict["intents"][skillname]["utterances"].append(udic)
         json_dict["entities"] = {}
         json_dict["language"] = "en"
+        '''
+        with open("example.json", "w") as out_file:
+            json.dump(json_dict, out_file, indent=4)
+        '''
+        json_data = json.loads(json.dumps(json_dict, sort_keys=False))
 
         engine = SnipsNLUEngine(config=CONFIG_EN)
-        engine.fit(json.loads(json.dumps(json_dict, sort_keys=False)))
+        engine.fit(json_data)
         return cls(engine, intent_names, nlp)
 
     @property

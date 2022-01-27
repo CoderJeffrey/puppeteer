@@ -6,6 +6,18 @@ from .extractions import Extractions
 from .nlu import SnipsEngine, SpacyEngine
 from .observation import Observation, MessageObservation
 
+# See if this is a standard Snips trigger.
+def lookfor(trigger_name: str, agenda_name: str, rootpath: str) -> Optional[str]:
+    agenda_training_data_path = os.path.join(rootpath, agenda_name)
+    if not os.path.isdir(agenda_training_data_path):
+        raise FileNotFoundError(
+            errno.ENOENT, os.strerror(errno.ENOENT), agenda_training_data_path)
+
+    for d in os.listdir(agenda_training_data_path):
+        if trigger_name == d:
+            return os.path.join(agenda_training_data_path, d)
+
+    return None
 
 class TriggerDetector(abc.ABC):
     """Class detecting triggers in observations.
@@ -253,36 +265,33 @@ class TriggerDetectorLoader:
             if (agenda_name in self._registered_by_agenda and
                     trigger_name in self._registered_by_agenda[agenda_name]):
                 #print(1)
+                print("1) CUSTOM Trigger: {}, is registered for agenda, {}.".format(trigger_name, agenda_name))
                 detector = self._registered_by_agenda[agenda_name][trigger_name]
                 detector.load()
                 detectors.append(detector)
             elif trigger_name in self._registered:
                 #print(2)
+                print("2) CUSTOM Trigger: {}, is registered for any agendas.".format(trigger_name))
                 detector = self._registered[trigger_name]
                 detector.load()
                 detectors.append(detector)
             else:
                 #print(3)
-                # See if this is a standard Snips trigger.
-                def lookfor(dirname: str, rootpath: str) -> Optional[str]:
-                    for (root, dirs, files) in os.walk(rootpath):
-                        if dirname in dirs:
-                            return os.path.join(root, dirname)
-                    return None
                 if agenda_name in self._snips_paths:
-                    path = lookfor(trigger_name, self._snips_paths[agenda_name])
+                    path = lookfor(trigger_name, agenda_name, self._snips_paths[agenda_name])
                     #print(4)
                     #print(path)
                     if path is not None:
                         snips_trigger_paths.append(path)
                 elif self._default_snips_path is not None:
-                    path = lookfor(trigger_name, self._default_snips_path)
+                    path = lookfor(trigger_name, agenda_name, self._default_snips_path)
                     #print(5)
                     #print(path)
                     if path is not None:
                         snips_trigger_paths.append(path)
                     else:
                         raise ValueError("Could not find detector for trigger: %s" % trigger_name)
+                print("3) SNIPS Trigger: {}, for agenda {} at {}".format(trigger_name, agenda_name, path))
         #print(6)
         #print(snips_trigger_paths)
         # Get standard Snips trigger detectors.

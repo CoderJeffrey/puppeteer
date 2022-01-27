@@ -453,7 +453,7 @@ class DefaultTriggerProbabilities(TriggerProbabilities):
         new_extractions = Extractions()
        
         for trigger_detector in self.trigger_detectors:
-            #print(trigger_detector)
+            #print(trigger_detector.trigger_names)
             self._log.begin(f"Trigger detector with trigger names {trigger_detector.trigger_names}")
             (trigger_map_out, non_trigger_prob, extractions) = trigger_detector.trigger_probabilities(observations,
                                                                                                       old_extractions)
@@ -469,6 +469,10 @@ class DefaultTriggerProbabilities(TriggerProbabilities):
 
             self._log.begin("Triggers")
             non_trigger_probs.append(non_trigger_prob)
+            ###
+            if not trigger_map_out:
+                self._log.add(f"no trigger(s) detected: {non_trigger_prob:.3f}")
+            ###
             for (trigger_name, p) in trigger_map_out.items():
                 self._log.add(f"{trigger_name}: {p:.3f}")
                 if trigger_name in self._probabilities:

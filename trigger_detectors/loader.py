@@ -1,7 +1,7 @@
 from os.path import dirname, join, realpath
 
 from puppeteer import SpacyEngine, TriggerDetectorLoader
-#from .intent import MessageIntentTriggerDetector
+from .intent import MessageIntentTriggerDetector
 #from .location import CityInExtractionsTriggerDetector, LocationInMessageTriggerDetector
 from .website import WebsiteTriggerDetector, WebsiteUrlTriggerDetector
 
@@ -14,10 +14,11 @@ class MyTriggerDetectorLoader(TriggerDetectorLoader):
         # Our custom trigger detectors.
         
         # Used by make_payment
-        #self.register_detector(MessageIntentTriggerDetector("payment", "payment"))
+        self.register_detector(MessageIntentTriggerDetector("payment", "payment"))
 
+        # Used by get_website
         self.register_detector(WebsiteTriggerDetector("website"))
-        self.register_detector(WebsiteUrlTriggerDetector("url"))
+        self.register_detector_for_agenda("get_website", WebsiteUrlTriggerDetector("url"))
 
         '''
         # Used by get_location

@@ -1,0 +1,6 @@
+-trg
+why
+-pos
+training_data/get_website/why/why.txt
+-neg
+training_data/get_website/why/NOTwhy.txt

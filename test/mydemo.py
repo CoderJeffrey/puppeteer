@@ -1,3 +1,5 @@
+import argparse
+import os
 from typing import List
 import numpy as np
 
@@ -24,22 +26,29 @@ class TestConversation:
 
         return (actions, extractions)
 
+def print_args(args):
+    print("agenda_path: {}".format(args.p))
+    print("agendas: {}".format(str(args.a)))
+    print("training_data_path: {}".format(args.t))
 
-if __name__ == "__main__":
+def demo(args):
+    print_args(args)
+    agenda_path = args.p
+    agenda_name = args.a
+    training_data_path = args.t
+    
     # Set up trigger detector loader
-    trigger_detector_loader = MyTriggerDetectorLoader("training_data")
+    trigger_detector_loader = MyTriggerDetectorLoader(training_data_path)
 
     # Load agendas
-    #get_location = Agenda.load("puppeteer/agendas/get_location.yaml", trigger_detector_loader)
-    #make_payment = Agenda.load("puppeteer/agendas/make_payment.yaml", trigger_detector_loader)
-    get_website = Agenda.load("puppeteer/agendas/get_website.yml", trigger_detector_loader)
-    print(str(get_website))
-    #agendas = [get_location, make_payment]
-    #agendas = [make_payment]
-    #agendas = [get_location]
-    agendas = [get_website]
-
-
+    agendas = []
+    for a in agenda_name:
+        yml = "{}.yaml".format(a)
+        path = os.path.join(agenda_path, yml)
+        agenda = Agenda.load(path, trigger_detector_loader)
+        print(str(agenda))
+        agendas.append(agenda)
+    
     tc = TestConversation(agendas)
     results = []
 
@@ -54,9 +63,19 @@ if __name__ == "__main__":
             results.append((tc.say(txt, intent)))
         else:
             results.append((tc.say(txt)))
-        '''
-        results.append((tc.say(txt)))
-        '''
+
+        #results.append((tc.say(txt)))
 
     print(results)
 
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Puppeteer demo",
+        fromfile_prefix_chars='@')
+    parser.add_argument('-p', type=str, help='path to agenda directory')
+    parser.add_argument('-a', nargs='+', type=str, help='list of agenda names')
+    parser.add_argument('-t', type=str, help='path to training data directory')
+    args = parser.parse_args()
+
+    demo(args)

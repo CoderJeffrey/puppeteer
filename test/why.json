@@ -1,0 +1,84 @@
+{
+    "intents": {
+        "why": {
+            "utterances": [
+                {
+                    "data": [
+                        {
+                            "text": "Why do you need to know?"
+                        }
+                    ]
+                },
+                {
+                    "data": [
+                        {
+                            "text": "Why are you interested?"
+                        }
+                    ]
+                },
+                {
+                    "data": [
+                        {
+                            "text": "Why are you asking?"
+                        }
+                    ]
+                },
+                {
+                    "data": [
+                        {
+                            "text": "Why do you need the website for?"
+                        }
+                    ]
+                },
+                {
+                    "data": [
+                        {
+                            "text": "Does it matter?"
+                        }
+                    ]
+                }
+            ]
+        },
+        "NOTwhy": {
+            "utterances": [
+                {
+                    "data": [
+                        {
+                            "text": "Why is the sky blue?"
+                        }
+                    ]
+                },
+                {
+                    "data": [
+                        {
+                            "text": "Why do we have 10 fingers?"
+                        }
+                    ]
+                },
+                {
+                    "data": [
+                        {
+                            "text": "Why is the 18 wheeler passing on the right?"
+                        }
+                    ]
+                },
+                {
+                    "data": [
+                        {
+                            "text": "Why did you vote for her?"
+                        }
+                    ]
+                },
+                {
+                    "data": [
+                        {
+                            "text": "Why do people want to hinder progress?"
+                        }
+                    ]
+                }
+            ]
+        }
+    },
+    "entities": {},
+    "language": "en"
+}
