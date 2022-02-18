@@ -1,7 +1,6 @@
 -p
 agendas
 -a
-get_website
-make_payment
+get_shipment_nli
 -t
 demo_training_data

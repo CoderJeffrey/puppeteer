@@ -1,9 +1,11 @@
 from os.path import dirname, join, realpath
 
 from puppeteer import SpacyEngine, TriggerDetectorLoader
-from .intent import MessageIntentTriggerDetector
-#from .location import CityInExtractionsTriggerDetector, LocationInMessageTriggerDetector
-from .website import WebsiteTriggerDetector, WebsiteUrlTriggerDetector
+# from .intent import MessageIntentTriggerDetector
+# from .location import CityInExtractionsTriggerDetector, LocationInMessageTriggerDetector
+# from .website import WebsiteTriggerDetector, WebsiteUrlTriggerDetector
+# from .shipment import ShipmentTriggerDetector
+from .shipment_nli import ShipmentTriggerDetector, ShipmentNliTriggerDetector
 
 
 class MyTriggerDetectorLoader(TriggerDetectorLoader):
@@ -14,11 +16,15 @@ class MyTriggerDetectorLoader(TriggerDetectorLoader):
         # Our custom trigger detectors.
         
         # Used by make_payment
-        self.register_detector(MessageIntentTriggerDetector("payment", "payment"))
+        # self.register_detector(MessageIntentTriggerDetector("payment", "payment")) #kickoff
 
         # Used by get_website
-        self.register_detector(WebsiteTriggerDetector("website"))
-        self.register_detector_for_agenda("get_website", WebsiteUrlTriggerDetector("url"))
+        # self.register_detector(WebsiteTriggerDetector("website")) #kickoff
+        # self.register_detector_for_agenda("get_website", WebsiteUrlTriggerDetector("url"))
+
+        # Used by get_shipment_nli
+        self.register_detector(ShipmentTriggerDetector("shipment")) #kickoff
+        self.register_detector_for_agenda("get_shipment_nli", ShipmentNliTriggerDetector("nli"))
 
         '''
         # Used by get_location
