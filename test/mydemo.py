@@ -34,15 +34,15 @@ def print_args(args):
 def demo(args):
     print_args(args)
     agenda_path = args.p
-    agenda_name = args.a
+    agenda_names = args.a
     training_data_path = args.t
     
     # Set up trigger detector loader
-    trigger_detector_loader = MyTriggerDetectorLoader(training_data_path)
+    trigger_detector_loader = MyTriggerDetectorLoader(training_data_path, agenda_names)
 
     # Load agendas
     agendas = []
-    for a in agenda_name:
+    for a in agenda_names:
         yml = "{}.yaml".format(a)
         path = os.path.join(agenda_path, yml)
         agenda = Agenda.load(path, trigger_detector_loader)

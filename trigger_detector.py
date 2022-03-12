@@ -264,29 +264,22 @@ class TriggerDetectorLoader:
             #print(trigger_name)
             if (agenda_name in self._registered_by_agenda and
                     trigger_name in self._registered_by_agenda[agenda_name]):
-                #print(1)
                 print("1) CUSTOM Trigger: {}, is registered for agenda, {}.".format(trigger_name, agenda_name))
                 detector = self._registered_by_agenda[agenda_name][trigger_name]
                 detector.load()
                 detectors.append(detector)
             elif trigger_name in self._registered:
-                #print(2)
                 print("2) CUSTOM Trigger: {}, is registered for any agendas.".format(trigger_name))
                 detector = self._registered[trigger_name]
                 detector.load()
                 detectors.append(detector)
             else:
-                #print(3)
                 if agenda_name in self._snips_paths:
                     path = lookfor(trigger_name, agenda_name, self._snips_paths[agenda_name])
-                    #print(4)
-                    #print(path)
                     if path is not None:
                         snips_trigger_paths.append(path)
                 elif self._default_snips_path is not None:
                     path = lookfor(trigger_name, agenda_name, self._default_snips_path)
-                    #print(5)
-                    #print(path)
                     if path is not None:
                         snips_trigger_paths.append(path)
                     else:

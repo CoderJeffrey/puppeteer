@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 from .agenda import Action, Agenda, AgendaState
 from .logging import Logger
-from .observation import Observation
+from .observation import Observation, IntentObservation
 from .extractions import Extractions
 
 
@@ -158,7 +158,7 @@ class DefaultPuppeteerPolicy(PuppeteerPolicy):
                 self._log.add("Just stopped this agenda, will not start it immediately again.")
                 self._log.end()
                 continue
-            elif self._times_made_current[agenda.name] > 1:
+            elif self._times_made_current[agenda.name] > 0:
                 self._log.add(f"This agenda has already been used {self._times_made_current[agenda.name]} times, " +
                               "will not start it again.")
                 self._log.end()
@@ -206,33 +206,6 @@ class DefaultPuppeteerPolicy(PuppeteerPolicy):
         self._log.add("Finishing act phase without a current agenda.")
 
         return actions
-'''
-    def plot_state(self, fig: plt.Figure, agenda_states: Dict[str, AgendaState]) -> None:
-        """Plot the state of the current agenda, if any.
-
-        Args:
-            fig: Figure to plot to.
-            agenda_states: For each agenda (indexed by name), the AgendaState object holding the current agenda state.
-        """
-        plt.figure(fig.number)
-        plt.clf()
-
-        if self._current_agenda is None:
-            plt.title("No current agenda")
-        else:
-            agenda_name = self._current_agenda.name
-            turns_without_progress = self._turns_without_progress[agenda_name]
-            times_made_current = self._times_made_current[agenda_name]
-            action_history = self._action_history[agenda_name]
-            title = "Current agenda: %s\n" % agenda_name
-            title += "    %d turns without progress\n" % turns_without_progress
-            title += "    made current %d times\n" % times_made_current
-            title += "    action history: %s" % [a.name for a in action_history]
-            plt.title(title)
-            agenda_state = agenda_states[self._current_agenda.name]
-            agenda_state.plot_state(fig)
-        plt.show()
-'''
 
 class Puppeteer:
     """Agendas-based dialog bot.
@@ -344,6 +317,18 @@ class Puppeteer:
         for agenda_state in self._agenda_states.values():
             extractions = agenda_state.update(self._last_actions, observations, old_extractions)
             new_extractions.update(extractions)
+
+        ###### when one trigger from one agenda kickoff other agenda.
+        if new_extractions.has_extraction("kickoff"):
+            kickoff_agenda = new_extractions.extraction("kickoff")["kickoff_agenda"]
+            kickoff_trigger = new_extractions.extraction("kickoff")["kickoff_trigger"]
+            print("kickoff agenda: {}, kickoff: trigger: {}".format(kickoff_agenda, kickoff_trigger))
+            kickoff_agenda_state = self._agenda_states[kickoff_agenda]
+            intent_observation = IntentObservation()
+            intent_observation.add_intent(kickoff_trigger)
+            _ = kickoff_agenda_state.update(self._last_actions, [intent_observation], old_extractions)
+        ######
+
         ######
         if self._plot_state:
             for agenda_state in self._agenda_states.values():

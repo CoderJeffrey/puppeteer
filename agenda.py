@@ -453,7 +453,7 @@ class DefaultTriggerProbabilities(TriggerProbabilities):
         new_extractions = Extractions()
        
         for trigger_detector in self.trigger_detectors:
-            #print(trigger_detector.trigger_names)
+            print(trigger_detector.trigger_names)
             self._log.begin(f"Trigger detector with trigger names {trigger_detector.trigger_names}")
             (trigger_map_out, non_trigger_prob, extractions) = trigger_detector.trigger_probabilities(observations,
                                                                                                       old_extractions)
@@ -487,12 +487,14 @@ class DefaultTriggerProbabilities(TriggerProbabilities):
             non_trigger_prob = 1.0 - max(trigger_map.values())
         else:
             non_trigger_prob = 1.0
-        
+
+        ###### Normalization
         sum_total = sum(trigger_map.values()) + non_trigger_prob
         
         non_trigger_prob = non_trigger_prob / sum_total
         for intent in trigger_map:
             trigger_map[intent] = trigger_map[intent] / sum_total
+        ######
 
         for t in self._probabilities.keys():
             if t in trigger_map:
@@ -615,44 +617,49 @@ class DefaultStateProbabilities(StateProbabilities):
         non_event_prob = trigger_probabilities.non_trigger_prob
 
         # Set up our new prob map.
-        new_probability_map = {}
-        for st in self._agenda.state_names:
-            new_probability_map[st] = 0.0
+        new_probability_map = {st: 0.0 for st in self._agenda.state_names}
         new_probability_map['ERROR_STATE'] = 0.0
 
         # Chance we actually have an event:
         p_event = 1.0 - non_event_prob
-        #print('p_event: {}'.format(p_event))
-        
-        # For each state in the machine, do:
+        print('p_event: {}'.format(p_event))
+        print('current_prob_map: {}'.format(current_probability_map))
+        print('trigger_map: {}'.format(trigger_map))
+
+        # # 1) Update state probability according to to_move
         for st in self._agenda.state_names:
+            # Only if the state is not terminus
+            if st in self._agenda.terminus_names:
+                continue
             to_move = current_probability_map[st] * p_event
-            new_probability_map[st] = max(0.05, current_probability_map[st] - to_move, new_probability_map[st])
-        #print('current_prob_map: {}'.format(current_probability_map))
-        #print('new_prob_map: {}'.format(new_probability_map))
-                      
-        # For each state in the machine, do:
+            new_probability_map[st] = max(0.0, current_probability_map[st] - to_move)
+
+        # 2) Update state probability according to trigger_map
         for st in self._agenda.state_names:
+            # Only if the state is not terminus
+            if st in self._agenda.terminus_names:
+                continue
+
             to_move = current_probability_map[st] * p_event
-            
             if round(to_move, 1) > 0.0:
-                print('to_move: {}'.format(to_move))
                 for event in trigger_map:
                     trans_prob = to_move * trigger_map[event]
                     if event in self._agenda.transition_trigger_names(st):
                         st2 = self._agenda.transition_end_state_name(st, event)
-                        new_probability_map[st2] = new_probability_map[st2] + trans_prob   
+                        new_probability_map[st2] += min(1.0, trans_prob)
                         # Decrease our confidence that we've had some problems following the script, previously.
                         # Not part of paper.
-                        new_probability_map['ERROR_STATE'] = max(0.05, new_probability_map['ERROR_STATE'] - trans_prob)
+                        new_probability_map['ERROR_STATE'] = max(0.0, new_probability_map['ERROR_STATE'] - trans_prob)
                     else:
                         # XXX Downgrade our probabilities if we don't have an event that matches a transition?
                         # for this particular state.
                         # Not part of paper.
-                        new_probability_map[st] = max(0.05, current_probability_map[st]-trigger_map[event])
+                        # new_probability_map[st] = max(0.05, current_probability_map[st]-trigger_map[event])
 
                         # Up our confidence that we've had some problems following the script.
                         new_probability_map['ERROR_STATE'] = new_probability_map['ERROR_STATE'] + trans_prob
+                        # if st not in self._agenda.terminus_names: 
+                        #     new_probability_map[st] = max(0.00, current_probability_map[st] - trigger_map[event])
 
         self._probabilities = new_probability_map
 

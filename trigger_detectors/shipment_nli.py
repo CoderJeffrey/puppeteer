@@ -1,13 +1,10 @@
 from typing import Any, List, Mapping, Tuple
-from puppeteer import Extractions, MessageObservation, Observation, TriggerDetector
-
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from puppeteer import Extractions, IntentObservation, MessageObservation, Observation, TriggerDetector
+from .nli import nli_model, tokenizer
 import torch
 torch.set_printoptions(precision=4)
-nli_model = AutoModelForSequenceClassification.from_pretrained('facebook/bart-large-mnli')
-tokenizer = AutoTokenizer.from_pretrained('facebook/bart-large-mnli')
 
-premise = "We offer shipping and delivery services."
+premise = "We offer shipping and delivery."
 
 def check_for_shipment(hypothesis):
 	print("NLI: p=\"{}\", h=\"{}\"".format(premise, hypothesis))
@@ -31,7 +28,7 @@ class ShipmentTriggerDetector(TriggerDetector):
     
 	def trigger_probabilities(self, observations: List[Observation], old_extractions: Extractions) -> Tuple[Mapping[str, float], float, Extractions]:
 		for observation in observations:
-			if isinstance(observation, MessageObservation):
+			if isinstance(observation, IntentObservation) or isinstance(observation, MessageObservation):
 				if observation.has_intent(self._trigger_name):
 					# Kickoff condition seen
 					return ({self._trigger_name: 1.0}, 0.0, Extractions())
@@ -57,4 +54,9 @@ class ShipmentNliTriggerDetector(TriggerDetector):
 				if ans == 1: # neutral
 					return ({}, 1.0, Extractions())
 				if ans == 2: # entailment
-					return ({"ship": 1.0}, 0.0, Extractions())
+					extraction = Extractions()
+					extraction.add_extraction("kickoff", {
+						"causal_trigger": "ship",
+						"kickoff_agenda": "get_payment_iii",
+						"kickoff_trigger": "payment"})
+					return ({"ship": 1.0}, 0.0, extraction)
