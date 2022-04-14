@@ -34,7 +34,7 @@ class PuppeteerPolicy(abc.ABC):
         self._agendas = agendas
 
     @abc.abstractmethod
-    def act(self, agenda_states: Dict[str, AgendaState]) -> List[Action]:
+    def act(self, agenda_states: Dict[str, AgendaState], extractions: Extractions) -> List[Action]:
         """"Picks zero or more appropriate actions to take, given the current state of the conversation.
 
         Args:
@@ -72,7 +72,7 @@ class DefaultPuppeteerPolicy(PuppeteerPolicy):
         self._action_history: Dict[str, List[Action]] = {a.name: [] for a in agendas}
         self._log = Logger()
 
-    def act(self, agenda_states: Dict[str, AgendaState]) -> List[Action]:
+    def act(self, agenda_states: Dict[str, AgendaState], extractions: Extractions) -> List[Action]:
         """"Picks zero or more appropriate actions to take, given the current state of the conversation.
 
         See documentation of this method in PuppeteerPolicy.
@@ -128,7 +128,7 @@ class DefaultPuppeteerPolicy(PuppeteerPolicy):
                 # Run and see if we get some actions.
                 action_history = self._action_history[agenda.name]
                 self._log.begin("Picking actions for the agenda.")
-                actions = agenda.policy.pick_actions(agenda_state, action_history, turns_without_progress)
+                actions = agenda.policy.pick_actions(agenda_state, action_history, turns_without_progress, extractions)
                 self._log.end()
                 self._action_history[agenda.name].extend(actions)
 
@@ -184,7 +184,7 @@ class DefaultPuppeteerPolicy(PuppeteerPolicy):
                 # Do first action.
                 # TODO run_puppeteer() uses [] for the action list, not self._action_history
                 self._log.begin("Picking actions for the agenda.")
-                new_actions = agenda.policy.pick_actions(agenda_state, [], 0)
+                new_actions = agenda.policy.pick_actions(agenda_state, [], 0, extractions)
                 self._log.end()
                 actions.extend(new_actions)
                 self._action_history[agenda.name].extend(new_actions)
@@ -313,9 +313,12 @@ class Puppeteer:
         self._log.end()
         self._log.end()
         new_extractions = Extractions()
+        current_agenda_name = ""
+        if self._policy._current_agenda:
+            current_agenda_name = self._policy._current_agenda._name
         self._log.begin("Update phase")
         for agenda_state in self._agenda_states.values():
-            extractions = agenda_state.update(self._last_actions, observations, old_extractions)
+            extractions = agenda_state.update(self._last_actions, observations, old_extractions, current_agenda_name)
             new_extractions.update(extractions)
 
         ###### when one trigger from one agenda kickoff other agenda.
@@ -326,7 +329,8 @@ class Puppeteer:
             kickoff_agenda_state = self._agenda_states[kickoff_agenda]
             intent_observation = IntentObservation()
             intent_observation.add_intent(kickoff_trigger)
-            _ = kickoff_agenda_state.update(self._last_actions, [intent_observation], old_extractions)
+            extractions = kickoff_agenda_state.update(self._last_actions, [intent_observation], old_extractions, current_agenda_name)
+            new_extractions.update(extractions)
         ######
 
         ######
@@ -336,7 +340,7 @@ class Puppeteer:
         ######
         self._log.end()
         self._log.begin("Act phase")
-        self._last_actions = self._policy.act(self._agenda_states)
+        self._last_actions = self._policy.act(self._agenda_states, new_extractions)
         self._log.end()
         self._log.begin("Outputs")
         self._log.begin("Actions")

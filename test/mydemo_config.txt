@@ -1,7 +1,8 @@
 -p
 agendas
 -a
-get_shipment_nli
-get_payment_iii
+get_website
+get_shipment
+get_payment
 -t
 demo_training_data

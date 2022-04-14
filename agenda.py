@@ -292,7 +292,8 @@ class AgendaState:
     def update(self,
                actions: List[Action],
                observations: List[Observation],
-               old_extractions: Extractions
+               old_extractions: Extractions,
+               current_agenda_name: str
                ) -> Extractions:
         """Updates the agenda-level state.
 
@@ -308,14 +309,15 @@ class AgendaState:
         """
         self._log.begin(f"Updating agenda {self._agenda.name}")
 
-        self._log.begin("Kickoff trigger probabilities")
-        new_extractions = self._kickoff_trigger_probabilities.update(observations, old_extractions)
-        self._log.end()
+        if current_agenda_name != self._agenda.name: #check for kickoff trigger if this agenda is not the current agenda
+            self._log.begin("Kickoff trigger probabilities")
+            new_extractions = self._kickoff_trigger_probabilities.update(observations, old_extractions)
+            self._log.end()
 
-        self._log.begin("Transition trigger probabilities")
-        extractions = self._transition_trigger_probabilities.update(observations, old_extractions)
-        new_extractions.update(extractions)
-        self._log.end()
+        else: #if the current agenda is this agenda, check for transition triggers
+            self._log.begin("Transition trigger probabilities")
+            new_extractions = self._transition_trigger_probabilities.update(observations, old_extractions)
+            self._log.end()
 
         self._log.begin("State probabilities")
         self._state_probabilities.update(self._transition_trigger_probabilities, actions)
@@ -458,8 +460,6 @@ class DefaultTriggerProbabilities(TriggerProbabilities):
             (trigger_map_out, non_trigger_prob, extractions) = trigger_detector.trigger_probabilities(observations,
                                                                                                       old_extractions)
 
-            #print('trigger_map_out: {}'.format(trigger_map_out))
-            #print('non_trigger_prob: {}'.format(non_trigger_prob))
             if extractions.names:
                 self._log.begin("Extractions")
                 for name in extractions.names:
@@ -729,7 +729,7 @@ class AgendaPolicy(abc.ABC):
 
     @abc.abstractmethod    
     def pick_actions(self, state: AgendaState, action_history: List[Action],
-                     turns_without_progress: int) -> List[Action]:
+                     turns_without_progress: int, extractions: Extractions) -> List[Action]:
         """Picks zero or more appropriate actions to take, given the current state of the agenda.
 
         Args:
@@ -931,7 +931,7 @@ class DefaultAgendaPolicy(AgendaPolicy):
         return 1.0 - non_kickoff_probability >= self._kickoff_thresh
 
     def pick_actions(self, state: AgendaState, action_history: List[Action],
-                     turns_without_progress: int) -> List[Action]:
+                     turns_without_progress: int, extractions: Extractions) -> List[Action]:
         """Picks zero or more appropriate actions to take, given the current state of the agenda.
 
         Args:
@@ -965,6 +965,11 @@ class DefaultAgendaPolicy(AgendaPolicy):
                 self._log.add(f"State {st} is the most likely state that has actions defined.")
                 for action_name in action_map[st]:
                     action = self._agenda.action(action_name)
+                    # check if action._text has "PLACEHOLDER" that should be filled by extractions["PLACEHOLDER"]
+                    # "PLACEHOLDER" is always uppercase
+                    # for extr in extractions.names:
+                    #     if extr.isupper():
+                    #         action._text = action._text.replace(extr, extractions.extraction(extr)) 
                     exclusive_flag = action.exclusive_flag
                     allowed_repeats = action.allowed_repeats
                     
@@ -990,6 +995,11 @@ class DefaultAgendaPolicy(AgendaPolicy):
                     if st in self._agenda.stall_action_map:
                         for action_name in self._agenda.stall_action_map[st]:
                             action = self._agenda.action(action_name)
+                            # check if action._text has "PLACEHOLDER" that should be filled by extractions["PLACEHOLDER"]
+                            # "PLACEHOLDER" is always uppercase
+                            # for extr in extractions.names:
+                            #     if extr.isupper():
+                            #         action._text.replace(extr, extractions.extraction(extr)) 
                             allowed_repeats = action.allowed_repeats
                             
                             num_times_action_was_used = action_history.count(action)
