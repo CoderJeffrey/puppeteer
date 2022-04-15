@@ -1,8 +1,0 @@
--p
-agendas
--a
-get_website
-get_shipment
-get_payment
--t
-demo_training_data
