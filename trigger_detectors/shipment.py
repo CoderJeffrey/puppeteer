@@ -1,21 +1,44 @@
 from typing import Any, List, Mapping, Tuple
 from puppeteer import Extractions, IntentObservation, MessageObservation, Observation, TriggerDetector
-from .nli import nli_model, tokenizer
+from .sentence_embedding import sentence_similarity
+from .nli import check_entailment
 import torch
 torch.set_printoptions(precision=4)
 
-premise = "We offer shipping and delivery."
+premises_kickoff = [
+"You won a gift card",
+"Greeting! We would like to offer you a gift card. Reply now to claim your award",
+"We are sending you a gift card because you are our lucky winner. Please reply with your bank account and routing number to receive your gift card",
+"You won a gift card! Please provide your back account and routing number to credit your gift card"
+]
+
+premises_ship = [
+"We offer shipping and delivery",
+"Sure, we can ship the gift card",
+"The gift card can be shipped",
+"Certainly, we provide delivery for the gift card",
+"We can send the gift card",
+"Of course, we can deliver the gift card"
+]
+
+premises_cant_ship = [
+"We do not offer shipping and delivery",
+"Sorry, this gift card can not be shipped",
+"We can not ship the gift card",
+"We don't provide delivery for the gift card",
+]
 
 def check_for_shipment(hypothesis):
-	print("NLI: p=\"{}\", h=\"{}\"".format(premise, hypothesis))
-	#prediction
-	x = tokenizer.encode(premise, hypothesis, return_tensors='pt')
-	logits = nli_model(x)[0] #(contradiction, neutral, entailment)
-	probs = logits.softmax(dim=1)
-	#print
-	for y in probs:
-		print("c0: {:4f}, n1: {:4f}, e2: {:4f}".format(y[0], y[1], y[2]))
-	return probs
+	#entailment: "ship"
+	if check_entailment(premises_ship, hypothesis):
+		return ("ship", Extractions()) 
+
+	#entailment: "cant_ship"
+	if check_entailment(premises_cant_ship, hypothesis):
+		return ("cant_ship", Extractions()) 
+
+	#neutral
+	return None
 
 class ShipmentTriggerDetector(TriggerDetector):
 
@@ -30,7 +53,10 @@ class ShipmentTriggerDetector(TriggerDetector):
 		for observation in observations:
 			if isinstance(observation, IntentObservation) or isinstance(observation, MessageObservation):
 				if observation.has_intent(self._trigger_name):
-					# Kickoff condition seen
+					# Kickoff condition seen: manual intent
+					return ({self._trigger_name: 1.0}, 0.0, Extractions())
+				if sentence_similarity(premises_kickoff, observation.text):
+					# Kickoff condition seen: semantic similarity
 					return ({self._trigger_name: 1.0}, 0.0, Extractions())
 		# No kickoff
 		return ({}, 1.0, Extractions())
@@ -47,16 +73,17 @@ class ShipmentNliTriggerDetector(TriggerDetector):
 	def trigger_probabilities(self, observations: List[Observation], old_extractions: Extractions) -> Tuple[Mapping[str, float], float, Extractions]:
 		for observation in observations:
 			if isinstance(observation, MessageObservation):
-				probs = check_for_shipment(observation.text)
-				ans = torch.argmax(probs)
-				if ans == 0: # contradiction
-					return ({"cant_ship": 1.0}, 0.0, Extractions())
-				if ans == 1: # neutral
-					return ({}, 1.0, Extractions())
-				if ans == 2: # entailment
+				ans = check_for_shipment(observation.text)
+				if ans == None:
+					return ({}, 1.0, Extractions())	
+				response, extraction = ans
+				if response == "ship":
 					extraction = Extractions()
 					extraction.add_extraction("kickoff", {
 						"causal_trigger": "ship",
 						"kickoff_agenda": "get_payment",
 						"kickoff_trigger": "payment"})
-					return ({"ship": 1.0}, 0.0, extraction)
+					return ({response: 1.0}, 0.0, extraction)
+				elif response == "cant_ship":
+					return ({response: 1.0}, 0.0, Extractions())
+		return ({}, 1.0, Extractions())	
