@@ -11,8 +11,6 @@ cymem==2.0.6
 Cython==0.29.26
 deprecation==2.1.0
 docopt==0.6.2
-en-core-web-lg==3.2.0
-en-core-web-sm==3.2.0
 filelock==3.4.2
 fonttools==4.28.5
 future==0.17.1
@@ -62,10 +60,6 @@ setuptools-rust==1.1.2
 six==1.16.0
 sklearn-crfsuite==0.3.6
 smart-open==5.2.1
-snips-nlu==0.20.2
-snips-nlu-en==0.2.3
-snips-nlu-parsers==0.4.3
-snips-nlu-utils==0.9.1
 spacy==3.2.1
 spacy-legacy==3.0.8
 spacy-loggers==1.0.1

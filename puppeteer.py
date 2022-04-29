@@ -250,7 +250,6 @@ class Puppeteer:
             plot_state: If true, the updated state of the current agenda is plotted after each turn.
         """
         self._agendas = agendas
-        #self._agenda_states = {a.name: AgendaState(a, plot_state) for a in agendas}
         self._last_actions: List[Action] = []
         self._policy = policy_cls(agendas)
         self._plot_state = plot_state
@@ -265,14 +264,6 @@ class Puppeteer:
         else:
             self._agenda_states = {a.name: AgendaState(a, None, None) for a in agendas}
 
-
-        '''
-        if plot_state:
-            self._fig = plt.figure()
-            self._policy.plot_state(self._fig, self._agenda_states)
-        else:
-            self._fig = None
-        '''
         self._log = Logger()
 
     @property
@@ -313,7 +304,7 @@ class Puppeteer:
         self._log.end()
         self._log.end()
         new_extractions = Extractions()
-        current_agenda_name = ""
+        current_agenda_name = None
         if self._policy._current_agenda:
             current_agenda_name = self._policy._current_agenda._name
         self._log.begin("Update phase")
@@ -325,7 +316,7 @@ class Puppeteer:
         if new_extractions.has_extraction("kickoff"):
             kickoff_agenda = new_extractions.extraction("kickoff")["kickoff_agenda"]
             kickoff_trigger = new_extractions.extraction("kickoff")["kickoff_trigger"]
-            print("kickoff agenda: {}, kickoff: trigger: {}".format(kickoff_agenda, kickoff_trigger))
+            #print("kickoff agenda: {}, kickoff: trigger: {}".format(kickoff_agenda, kickoff_trigger))
             kickoff_agenda_state = self._agenda_states[kickoff_agenda]
             intent_observation = IntentObservation()
             intent_observation.add_intent(kickoff_trigger)
@@ -357,3 +348,18 @@ class Puppeteer:
             self._policy.plot_state(self._fig, self._agenda_states)
         '''
         return self._last_actions, new_extractions
+
+    def get_current_agenda(self) -> Agenda:
+        """Returns the most likely current agenda.
+        """
+        return self._policy._current_agenda
+
+    def get_current_state(self, current_agenda) -> tuple[str, float]:
+        """Given the current agenda, returns the most likely current state with it probability.
+        """
+        if current_agenda:
+            current_state_probability_map = self._agenda_states[current_agenda._name]._state_probabilities._probabilities
+            current_state_name = max(current_state_probability_map, key=lambda x: current_state_probability_map[x])
+            return (current_state_name, current_state_probability_map[current_state_name])
+        else:
+            return (None, None)

@@ -455,7 +455,7 @@ class DefaultTriggerProbabilities(TriggerProbabilities):
         new_extractions = Extractions()
        
         for trigger_detector in self.trigger_detectors:
-            print(trigger_detector.trigger_names)
+            #print(trigger_detector.trigger_names)
             self._log.begin(f"Trigger detector with trigger names {trigger_detector.trigger_names}")
             (trigger_map_out, non_trigger_prob, extractions) = trigger_detector.trigger_probabilities(observations,
                                                                                                       old_extractions)
@@ -622,9 +622,9 @@ class DefaultStateProbabilities(StateProbabilities):
 
         # Chance we actually have an event:
         p_event = 1.0 - non_event_prob
-        print('p_event: {}'.format(p_event))
-        print('current_prob_map: {}'.format(current_probability_map))
-        print('trigger_map: {}'.format(trigger_map))
+        #print('p_event: {}'.format(p_event))
+        #print('current_prob_map: {}'.format(current_probability_map))
+        #print('trigger_map: {}'.format(trigger_map))
 
         # # 1) Update state probability according to to_move
         for st in self._agenda.state_names:
