@@ -293,7 +293,7 @@ class AgendaState:
                actions: List[Action],
                observations: List[Observation],
                old_extractions: Extractions,
-               current_agenda_name: str
+               active_agendas: Dict[str, "Agenda"]
                ) -> Extractions:
         """Updates the agenda-level state.
 
@@ -309,12 +309,12 @@ class AgendaState:
         """
         self._log.begin(f"Updating agenda {self._agenda.name}")
 
-        if current_agenda_name != self._agenda.name: #check for kickoff trigger if this agenda is not the current agenda
+        if self._agenda.name not in active_agendas: #check for kickoff trigger if this agenda is not in the active list
             self._log.begin("Kickoff trigger probabilities")
             new_extractions = self._kickoff_trigger_probabilities.update(observations, old_extractions)
             self._log.end()
 
-        else: #if the current agenda is this agenda, check for transition triggers
+        else: #if this agenda is active, check for transition triggers
             self._log.begin("Transition trigger probabilities")
             new_extractions = self._transition_trigger_probabilities.update(observations, old_extractions)
             self._log.end()

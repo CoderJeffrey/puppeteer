@@ -2,8 +2,6 @@ from typing import Any, List, Mapping, Tuple
 from puppeteer import Extractions, IntentObservation, MessageObservation, Observation, TriggerDetector
 from .sentence_embedding import sentence_similarity
 from .nli import check_entailment
-import torch
-torch.set_printoptions(precision=4)
 
 premises_kickoff = [
 "You won a gift card",

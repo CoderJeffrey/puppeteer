@@ -1,7 +1,16 @@
 import requests
 from typing import Any, List, Mapping, Tuple
-from puppeteer import Extractions, MessageObservation, Observation, TriggerDetector
+from puppeteer import Extractions, IntentObservation, MessageObservation, Observation, TriggerDetector
 from urlextract import URLExtract
+
+from .sentence_embedding import sentence_similarity
+
+premises_kickoff = [
+"You won a gift card",
+"Greeting! We would like to offer you a gift card. Reply now to claim your award",
+"We are sending you a gift card because you are our lucky winner. Please reply with your bank account and routing number to receive your gift card",
+"You won a gift card! Please provide your back account and routing number to credit your gift card"
+]
 
 extractor = URLExtract()
 
@@ -28,40 +37,43 @@ def check_for_url(msg: str):
 
 class WebsiteTriggerDetector(TriggerDetector):
 
-  def __init__(self, trigger_name="website"):
-      self._trigger_name = trigger_name
+	def __init__(self, trigger_name="website"):
+		self._trigger_name = trigger_name
       
-  @property
-  def trigger_names(self) -> List[str]:
-      return [self._trigger_name]
+	@property
+	def trigger_names(self) -> List[str]:
+		return [self._trigger_name]
     
-  def trigger_probabilities(self, observations: List[Observation], old_extractions: Extractions) -> Tuple[Mapping[str, float], float, Extractions]:
-      for observation in observations:
-          if isinstance(observation, MessageObservation):            
-              if observation.has_intent(self._trigger_name):
-                  # Kickoff condition seen
-                  return ({self._trigger_name: 1.0}, 0.0, Extractions())
-      # No kickoff
-      return ({}, 1.0, Extractions())
+	def trigger_probabilities(self, observations: List[Observation], old_extractions: Extractions) -> Tuple[Mapping[str, float], float, Extractions]:
+		for observation in observations:
+			if isinstance(observation, IntentObservation) or isinstance(observation, MessageObservation):
+				if observation.has_intent(self._trigger_name):
+					# Kickoff condition seen: manual intent
+					return ({self._trigger_name: 1.0}, 0.0, Extractions())
+				if sentence_similarity(premises_kickoff, observation.text):
+					# Kickoff condition seen: semantic similarity
+					return ({self._trigger_name: 1.0}, 0.0, Extractions())
+		# No kickoff
+		return ({}, 1.0, Extractions())
 
 
 class WebsiteUrlTriggerDetector(TriggerDetector):
 
-  def __init__(self, trigger_name="url"):
-      self._trigger_name = trigger_name
+	def __init__(self, trigger_name="url"):
+		self._trigger_name = trigger_name
       
-  @property
-  def trigger_names(self) -> List[str]:
-      return ["valid_url", "invalid_url"]
-    
-  def trigger_probabilities(self, observations: List[Observation], old_extractions: Extractions) -> Tuple[Mapping[str, float], float, Extractions]:
-      for observation in observations:
-          if isinstance(observation, MessageObservation):
-                check = check_for_url(observation.text)
-                if check == None:
-                    return ({}, 1.0, Extractions())
-                else:
-                    if check == "valid":
-                        return ({"valid_url": 1.0}, 0.0, Extractions())
-                    else:
-                        return ({"invalid_url": 1.0}, 0.0, Extractions())
+	@property
+	def trigger_names(self) -> List[str]:
+		return ["valid_url", "invalid_url"]
+
+	def trigger_probabilities(self, observations: List[Observation], old_extractions: Extractions) -> Tuple[Mapping[str, float], float, Extractions]:
+		for observation in observations:
+			if isinstance(observation, MessageObservation):
+				check = check_for_url(observation.text)
+				if check == None:
+					return ({}, 1.0, Extractions())
+				else:
+					if check == "valid":
+						return ({"valid_url": 1.0}, 0.0, Extractions())
+					else:
+						return ({"invalid_url": 1.0}, 0.0, Extractions())
