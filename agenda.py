@@ -293,7 +293,7 @@ class AgendaState:
                actions: List[Action],
                observations: List[Observation],
                old_extractions: Extractions,
-               current_agenda_name: str
+               active_agendas: Dict[str, "Agenda"]
                ) -> Extractions:
         """Updates the agenda-level state.
 
@@ -309,12 +309,12 @@ class AgendaState:
         """
         self._log.begin(f"Updating agenda {self._agenda.name}")
 
-        if current_agenda_name != self._agenda.name: #check for kickoff trigger if this agenda is not the current agenda
+        if self._agenda.name not in active_agendas: #check for kickoff trigger if this agenda is not in the active list
             self._log.begin("Kickoff trigger probabilities")
             new_extractions = self._kickoff_trigger_probabilities.update(observations, old_extractions)
             self._log.end()
 
-        else: #if the current agenda is this agenda, check for transition triggers
+        else: #if this agenda is active, check for transition triggers
             self._log.begin("Transition trigger probabilities")
             new_extractions = self._transition_trigger_probabilities.update(observations, old_extractions)
             self._log.end()
@@ -455,7 +455,7 @@ class DefaultTriggerProbabilities(TriggerProbabilities):
         new_extractions = Extractions()
        
         for trigger_detector in self.trigger_detectors:
-            print(trigger_detector.trigger_names)
+            #print(trigger_detector.trigger_names)
             self._log.begin(f"Trigger detector with trigger names {trigger_detector.trigger_names}")
             (trigger_map_out, non_trigger_prob, extractions) = trigger_detector.trigger_probabilities(observations,
                                                                                                       old_extractions)
@@ -622,9 +622,9 @@ class DefaultStateProbabilities(StateProbabilities):
 
         # Chance we actually have an event:
         p_event = 1.0 - non_event_prob
-        print('p_event: {}'.format(p_event))
-        print('current_prob_map: {}'.format(current_probability_map))
-        print('trigger_map: {}'.format(trigger_map))
+        #print('p_event: {}'.format(p_event))
+        #print('current_prob_map: {}'.format(current_probability_map))
+        #print('trigger_map: {}'.format(trigger_map))
 
         # # 1) Update state probability according to to_move
         for st in self._agenda.state_names:

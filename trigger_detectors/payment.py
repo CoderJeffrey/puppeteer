@@ -2,6 +2,8 @@ from typing import Any, List, Mapping, Tuple
 from puppeteer import Extractions, IntentObservation, MessageObservation, Observation, TriggerDetector
 import re
 from .nli import check_entailment
+import nltk
+nltk.download('punkt')
 from nltk import word_tokenize
 from nltk.util import ngrams
 

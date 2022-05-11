@@ -6,6 +6,7 @@ torch.set_printoptions(precision=4)
 
 def check_entailment(premises, msg):
 	for pm in premises:
+		# print("NLI: p=\"{}\", h=\"{}\"".format(pm, msg))
 		x = tokenizer.encode(pm, msg, return_tensors='pt')
 		logits = nli_model(x)[0] #(contradiction, neutral, entailment)
 		probs = logits.softmax(dim=1)

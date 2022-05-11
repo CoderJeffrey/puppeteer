@@ -67,6 +67,7 @@ class DefaultPuppeteerPolicy(PuppeteerPolicy):
         super(DefaultPuppeteerPolicy, self).__init__(agendas)
         # State
         self._current_agenda = None
+        self._active_agendas: Dict[str, Agenda] = {}
         self._turns_without_progress = {a.name: 0 for a in agendas}
         self._times_made_current = {a.name: 0 for a in agendas}
         self._action_history: Dict[str, List[Action]] = {a.name: [] for a in agendas}
@@ -123,6 +124,7 @@ class DefaultPuppeteerPolicy(PuppeteerPolicy):
                 self._log.add("The agenda has been going on for too long without progress and will be stopped.")
                 agenda_state.reset()
                 self._current_agenda = None
+                del self._active_agendas[agenda.name] #remove current agenda from the active list
                 last_agenda = agenda
             else:
                 # Run and see if we get some actions.
@@ -146,6 +148,7 @@ class DefaultPuppeteerPolicy(PuppeteerPolicy):
                     # Do last action if there is one.
                     agenda_state.reset()
                     self._current_agenda = None
+                    del self._active_agendas[agenda.name] #remove current agenda from the active list
                     last_agenda = agenda
             self._log.end()
         # Try to pick a new agenda.
@@ -164,7 +167,7 @@ class DefaultPuppeteerPolicy(PuppeteerPolicy):
                 self._log.end()
                 continue
 
-            if agenda.policy.can_kick_off(agenda_state):
+            if agenda.name in self._active_agendas: #agenda that already been kicked off
                 # If we can kick off, make this our active agenda, do actions and return.
                 self._log.add("The agenda can kick off. This is our new agenda!")
                 self._log.begin(f"Puppeteer policy state for {agenda.name}:")
@@ -195,6 +198,7 @@ class DefaultPuppeteerPolicy(PuppeteerPolicy):
                     self._log.add("We started the agenda, but its start state is a terminal state, so stopping it.")
                     self._log.add("Finishing act phase without a current agenda.")
                     self._current_agenda = None
+                    del self._active_agendas[agenda.name] #remove current agenda from the active list
                 self._log.end()
                 self._log.end()
                 return actions
@@ -250,7 +254,6 @@ class Puppeteer:
             plot_state: If true, the updated state of the current agenda is plotted after each turn.
         """
         self._agendas = agendas
-        #self._agenda_states = {a.name: AgendaState(a, plot_state) for a in agendas}
         self._last_actions: List[Action] = []
         self._policy = policy_cls(agendas)
         self._plot_state = plot_state
@@ -265,14 +268,6 @@ class Puppeteer:
         else:
             self._agenda_states = {a.name: AgendaState(a, None, None) for a in agendas}
 
-
-        '''
-        if plot_state:
-            self._fig = plt.figure()
-            self._policy.plot_state(self._fig, self._agenda_states)
-        else:
-            self._fig = None
-        '''
         self._log = Logger()
 
     @property
@@ -313,25 +308,29 @@ class Puppeteer:
         self._log.end()
         self._log.end()
         new_extractions = Extractions()
-        current_agenda_name = ""
-        if self._policy._current_agenda:
-            current_agenda_name = self._policy._current_agenda._name
+        active_agendas = self._policy._active_agendas
         self._log.begin("Update phase")
         for agenda_state in self._agenda_states.values():
-            extractions = agenda_state.update(self._last_actions, observations, old_extractions, current_agenda_name)
+            extractions = agenda_state.update(self._last_actions, observations, old_extractions, active_agendas)
             new_extractions.update(extractions)
 
         ###### when one trigger from one agenda kickoff other agenda.
         if new_extractions.has_extraction("kickoff"):
             kickoff_agenda = new_extractions.extraction("kickoff")["kickoff_agenda"]
             kickoff_trigger = new_extractions.extraction("kickoff")["kickoff_trigger"]
-            print("kickoff agenda: {}, kickoff: trigger: {}".format(kickoff_agenda, kickoff_trigger))
+            #print("kickoff agenda: {}, kickoff: trigger: {}".format(kickoff_agenda, kickoff_trigger))
             kickoff_agenda_state = self._agenda_states[kickoff_agenda]
             intent_observation = IntentObservation()
             intent_observation.add_intent(kickoff_trigger)
-            extractions = kickoff_agenda_state.update(self._last_actions, [intent_observation], old_extractions, current_agenda_name)
+            extractions = kickoff_agenda_state.update(self._last_actions, [intent_observation], old_extractions, active_agendas)
             new_extractions.update(extractions)
         ######
+
+        # update the list of active agendas (if any agendas are kicked off)
+        for agenda in self._agendas:
+            agenda_state = self._agenda_states[agenda.name]
+            if agenda.policy.can_kick_off(agenda_state):
+                active_agendas[agenda.name] = agenda
 
         ######
         if self._plot_state:
@@ -357,3 +356,18 @@ class Puppeteer:
             self._policy.plot_state(self._fig, self._agenda_states)
         '''
         return self._last_actions, new_extractions
+
+    def get_current_agenda(self) -> Agenda:
+        """Returns the most likely current agenda.
+        """
+        return self._policy._current_agenda
+
+    def get_current_state(self, current_agenda) -> tuple[str, float]:
+        """Given the current agenda, returns the most likely current state with it probability.
+        """
+        if current_agenda:
+            current_state_probability_map = self._agenda_states[current_agenda._name]._state_probabilities._probabilities
+            current_state_name = max(current_state_probability_map, key=lambda x: current_state_probability_map[x])
+            return (current_state_name, current_state_probability_map[current_state_name])
+        else:
+            return (None, None)
