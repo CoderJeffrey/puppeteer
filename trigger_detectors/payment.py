@@ -7,7 +7,7 @@ nltk.download('punkt')
 from nltk import word_tokenize
 from nltk.util import ngrams
 
-extraction_threshold = 0.6
+high_score_threshold = 0.6
 
 # First time at <<payment>> state (kickoff): extraction({"payment": "Venmo"})
 # Second time at <<payment>> state: extraction({"payment": "PayPal"})
@@ -146,7 +146,7 @@ class TransitionPaymentTriggerDetector(TriggerDetector):
 			else:
 				trigger_map_out[trigger] = get_entailment_score(premises[trigger], observations)
 
-		# Since multiple triggers may overlap in term of semantic and yield high trigger scores (> extraction_threshold), 
+		# Since multiple triggers may overlap in term of semantic and yield high trigger scores (> high_score_threshold), 
 		# we only choose the max score from either one of them and zero out the rest to avoid low trigger probability scores after normalization.
 		# image we have two large scores and then we normalize them to (0, 1) scale then
 		# suddenly both normalized scores (which previously are large) become less by large fraction
@@ -154,7 +154,7 @@ class TransitionPaymentTriggerDetector(TriggerDetector):
 		max_score = 0
 		winner = None
 		for trigger in self.trigger_names:
-			if trigger_map_out[trigger] > extraction_threshold:
+			if trigger_map_out[trigger] > high_score_threshold:
 				candidates.append(trigger)
 				if trigger_map_out[trigger] > max_score:
 					max_score = trigger_map_out[trigger]

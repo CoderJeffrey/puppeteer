@@ -3,7 +3,7 @@ from puppeteer import Extractions, IntentObservation, Observation, TriggerDetect
 # from .sentence_embedding import get_similarity_score
 from .nli import get_entailment_score
 
-extraction_threshold = 0.6
+high_score_threshold = 0.6
 
 premises = {
 	"kickoff": [
@@ -61,7 +61,7 @@ class TransitionShipmentTriggerDetector(TriggerDetector):
 		extractions = Extractions()
 		for trigger in self.trigger_names:
 			trigger_map_out[trigger] = get_entailment_score(premises[trigger], observations)
-			if trigger == "ship" and trigger_map_out[trigger] > extraction_threshold:
+			if trigger == "ship" and trigger_map_out[trigger] > high_score_threshold:
 				extractions.add_extraction("kickoff", {
 					"causal_trigger": "ship",
 					"kickoff_agenda": "get_payment",

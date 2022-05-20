@@ -200,7 +200,7 @@ class DefaultPuppeteerPolicy(PuppeteerPolicy):
                 agenda_state.reset()
                 finished_agenda_names.append(agenda_name)
 
-        # Remove finished agendas from a list of active agendas.
+        # Remove finished agendas from a list of active agendas and a list of kicked-off agendas.
         for agenda_name in finished_agenda_names:
             del self._active_agendas[agenda_name]
             del self._kicked_off_agendas[agenda_name]
@@ -474,7 +474,7 @@ class Puppeteer:
             self._log.add(f"{name}: '{new_extractions.extraction(name)}'")
         self._log.end()
         self._log.end()
-        
+
         return self._last_actions, new_extractions
 
     def get_active_agenda_names(self) -> List[str]:
