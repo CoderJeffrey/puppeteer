@@ -293,7 +293,8 @@ class AgendaState:
                actions: List[Action],
                observations: List[Observation],
                old_extractions: Extractions,
-               active_agendas: Dict[str, "Agenda"]
+               active_agendas: Dict[str, "Agenda"],
+               kicked_off_agendas: Dict[str, "Agenda"]
                ) -> Extractions:
         """Updates the agenda-level state.
 
@@ -314,10 +315,13 @@ class AgendaState:
             new_extractions = self._kickoff_trigger_probabilities.update(observations, old_extractions)
             self._log.end()
 
-        else: #if this agenda is active, check for transition triggers
+        elif self._agenda.name in kicked_off_agendas: #if this agenda has been kicked-off, check for transition triggers
             self._log.begin("Transition trigger probabilities")
             new_extractions = self._transition_trigger_probabilities.update(observations, old_extractions)
             self._log.end()
+
+        else: #this agenda is active but not kicked-off yet ==> do nothing
+            return Extractions()
 
         self._log.begin("State probabilities")
         self._state_probabilities.update(self._transition_trigger_probabilities, actions)
@@ -451,14 +455,12 @@ class DefaultTriggerProbabilities(TriggerProbabilities):
             New extractions made based on the observations.
         """
         trigger_map: Dict[str, float] = {}
-        non_trigger_probs: List[float] = []
         new_extractions = Extractions()
        
         for trigger_detector in self.trigger_detectors:
             #print(trigger_detector.trigger_names)
             self._log.begin(f"Trigger detector with trigger names {trigger_detector.trigger_names}")
-            (trigger_map_out, non_trigger_prob, extractions) = trigger_detector.trigger_probabilities(observations,
-                                                                                                      old_extractions)
+            trigger_map_out, extractions = trigger_detector.trigger_probabilities(observations, old_extractions)
 
             if extractions.names:
                 self._log.begin("Extractions")
@@ -468,11 +470,9 @@ class DefaultTriggerProbabilities(TriggerProbabilities):
             new_extractions.update(extractions)
 
             self._log.begin("Triggers")
-            non_trigger_probs.append(non_trigger_prob)
-            ###
-            if not trigger_map_out:
-                self._log.add(f"no trigger(s) detected: {non_trigger_prob:.3f}")
-            ###
+            # if not trigger_map_out:
+            #     self._log.add("no trigger(s) detected")
+
             for (trigger_name, p) in trigger_map_out.items():
                 self._log.add(f"{trigger_name}: {p:.3f}")
                 if trigger_name in self._probabilities:
@@ -488,13 +488,11 @@ class DefaultTriggerProbabilities(TriggerProbabilities):
         else:
             non_trigger_prob = 1.0
 
-        ###### Normalization
-        sum_total = sum(trigger_map.values()) + non_trigger_prob
-        
+        # Normalization
+        sum_total = sum(trigger_map.values()) + non_trigger_prob        
         non_trigger_prob = non_trigger_prob / sum_total
         for intent in trigger_map:
             trigger_map[intent] = trigger_map[intent] / sum_total
-        ######
 
         for t in self._probabilities.keys():
             if t in trigger_map:
@@ -606,11 +604,16 @@ class DefaultStateProbabilities(StateProbabilities):
             trigger_probabilities: The trigger probabilities.
             actions: Actions performed in the last turn.
         """
+
+        """ We don't need this for multiple agendas
+
         # Check if the last of the actions taken "belongs" to this agenda. Earlier
         # actions may be the finishing actions of a deactivated agenda.
         #print('actions: {}'.format(actions))
         if actions and not actions[-1] in self._agenda.actions:
             return
+
+        """
         
         current_probability_map = self._probabilities
         trigger_map = trigger_probabilities.probabilities

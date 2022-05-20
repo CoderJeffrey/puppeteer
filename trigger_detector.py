@@ -166,11 +166,13 @@ class SnipsTriggerDetector(TriggerDetector):
                         trigger_map[trigger_name] = p
                     elif trigger_map[trigger_name] < p:
                         trigger_map[trigger_name] = p
-        if trigger_map:
-            non_event_prob = 1.0 - max(trigger_map.values())
-        else:
-            non_event_prob = 1.0
-        return trigger_map, non_event_prob, Extractions()
+        # if trigger_map:
+        #     non_event_prob = 1.0 - max(trigger_map.values())
+        # else:
+        #     non_event_prob = 1.0
+        # return trigger_map, non_event_prob, Extractions()
+
+        return trigger_map, Extractions()
 
 
 class TriggerDetectorLoader:

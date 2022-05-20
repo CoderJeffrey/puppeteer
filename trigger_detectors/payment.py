@@ -1,11 +1,13 @@
 from typing import Any, List, Mapping, Tuple
 from puppeteer import Extractions, IntentObservation, MessageObservation, Observation, TriggerDetector
 import re
-from .nli import check_entailment
+from .nli import get_entailment_score
 import nltk
 nltk.download('punkt')
 from nltk import word_tokenize
 from nltk.util import ngrams
+
+extraction_threshold = 0.6
 
 # First time at <<payment>> state (kickoff): extraction({"payment": "Venmo"})
 # Second time at <<payment>> state: extraction({"payment": "PayPal"})
@@ -19,23 +21,60 @@ payment_signup_link = {
 "Zelle": "zelle.com/signup"
 }
 
+premises = {
+	"yes_payment": [
+		"yes, this payment works", 
+		"yes, it works", 
+		"yes, this payment sounds good", 
+		"yes, it sounds good", 
+		"Sure, I can do this payment", 
+		"Sure, I can do it"
+		],
+	"no_payment": [
+		"no, I don't use this payment",
+		"no, I don't have an account",
+		],
+	"no_but_try_payment": [
+		"I don't use this payment but I can try",
+		"I don't use it but I can try", 
+		"I never used this payment before. However, I am willing to try", 
+		"I never used it before. However, I am willing to try", 
+		"No, but I can try", 
+		"No, How to use it?"
+		],
+	"signup_success": [
+		"I have created my account",
+		"Done, I have the account"
+		],
+	"signup_fail": [
+		"I can not sign up the account",
+		"There is some problems with the sign up process",
+		"I follow the link you gave me but it is too complicated",
+		"I follow the link you gave me but still am unable to create the account"
+		]
+}
+
+def preprocess_observation(observations, old_extractions):
+	for observation in observations:
+		if isinstance(observation, MessageObservation):
+			observation._text = observation.text.lower()
+			if old_extractions.has_extraction("PAYMENT"):
+				current_payment = old_extractions.extraction("PAYMENT")
+				observation._text = observation.text.replace(current_payment.lower(), "this payment")
+
 def get_payment_method():
 	global payment_i, payment_methods
 	payment_i += 1
 	if payment_i >= len(payment_methods): # already tried every payment method
 		return None
-	extraction = Extractions()
-	extraction.add_extraction("PAYMENT", payment_methods[payment_i])
-	return extraction
+	return payment_methods[payment_i]
 
 def get_signup_link():
 	global payment_i, payment_methods
 	current_payment = payment_methods[payment_i]
-	extraction = Extractions()
-	extraction.add_extraction("SIGNUP_INFO", payment_signup_link[current_payment])
-	return extraction
+	return payment_signup_link[current_payment]
 
-def check_for_other_payment(text):
+def get_ngram_score(text):
 	global payment_i, payment_methods
 	current_payment = payment_methods[payment_i].lower()
 	other_payments = ["venmo", "paypal", "zelle", "apple pay", "google pay", "cash app", "samsung pay", "alipay"]
@@ -46,12 +85,10 @@ def check_for_other_payment(text):
 	tokens = unigrams + bigrams
 	for t in tokens:
 		if t in other_payments:
-			extraction = Extractions()
-			extraction.add_extraction("OTHER_PAYMENT", t)
-			return extraction
-	return None
+			return (1, t)
+	return (0, None)
 
-def check_for_e_account(text):
+def get_regex_score(text):
 	#https://stackoverflow.com/questions/17681670/extract-email-sub-strings-from-large-document
 	emails = re.findall(r'[\w.+-]+@[\w-]+\.[\w.-]+', text)
 	#https://stackoverflow.com/questions/37393480/python-regex-to-extract-phone-numbers-from-string
@@ -59,168 +96,92 @@ def check_for_e_account(text):
 	# print("emails: {}".format(str(emails)))
 	# print("phone_numbers: {}".format(str(phone_numbers)))
 	account = emails + phone_numbers
-	return account if account else None
+	return (1, account) if account else (0, None)
 
-def check_for_ask_payment(text, payment):
-	# Q: Would PAYMENT work for you?
+class KickOffPaymentTriggerDetector(TriggerDetector):
 
-	# A: Yes, it works for me.
-	# A: Yes, PAYMENT works for me.
-	# A: Yes, PAYMENT sounds good.
-	# A: Sure, I can do PAYMENT
+	def __init__(self, detector_name="kickoff_payment"):
+		self._detector_name = detector_name
 
-	# A: I don't use PAYMENT but I can try.
-	# A: I never use PAYMENT before. However, I am willing to try.
-	# A: No, but I can try
-	# A: No, How to use it? 
-
-	# A: I prefer OTHER PAYMENTS. would that work for you?
-	# A: I don't use PAYMENT but I do use OTHER PAYMENTS.
-
-	text = text.lower()
-	text = text.replace(payment.lower(), "this payment")
-
-	premise_yes_payment = [
-	"yes",
-	"yes, this payment works", 
-	"yes, it works", 
-	"yes, this payment sounds good", 
-	"yes, it sounds good", 
-	"Sure, I can do this payment", 
-	"Sure, I can do it",
-	]
-	if check_entailment(premise_yes_payment, text):
-		return ("yes_payment", Extractions())
-
-	premise_no_payment = [
-	"no", 
-	"no, I don't use this payment",
-	"no, I don't have an account",
-	]
-	if check_entailment(premise_no_payment, text):
-		next_payment = get_payment_method() #Extractions
-		return ("no_payment", next_payment)
-
-	premise_no_but_try_payment = [
-	"I don't use this payment but I can try", 
-	"I don't use it but I can try", 
-	"I never used this payment before. However, I am willing to try", 
-	"I never used it before. However, I am willing to try", 
-	"No, but I can try", 
-	"No, How to use it?"
-	]
-	if check_entailment(premise_no_but_try_payment, text):
-		signup_link = get_signup_link() #Extractions
-		return ("no_but_try_payment", signup_link)
-
-	other_payment = check_for_other_payment(text) #Extractions
-	if other_payment:
-		return ("no_but_other_payment", other_payment)
-
-	return ("NOT_DETECT", Extractions())
-
-def check_for_signup(text):
-	premise_signup_success = [
-		"Done",
-		"I have created my account",
-		"Done, I have the account"
-	]
-	if check_entailment(premise_signup_success, text):
-		return "signup_success"
-
-	premise_signup_fail = [
-		"I can not sign up the account",
-		"There is some problems with the sign up process",
-		"I follow the link you gave me but it is too complicated",
-		"I follow the link you gave me but still am unable to create the account"
-	]
-	if check_entailment(premise_signup_fail, text):
-		return "signup_fail"
-
-	return "NOT_DETECT"
-
-class PaymentTriggerDetector(TriggerDetector):
-
-	def __init__(self, trigger_name="payment"):
-		self._trigger_name = trigger_name
-      
 	@property
 	def trigger_names(self) -> List[str]:
-		return [self._trigger_name]
+		return ["payment"]
 
-	def trigger_probabilities(self, observations: List[Observation], old_extractions: Extractions) -> Tuple[Mapping[str, float], float, Extractions]:
+	def trigger_probabilities(self, observations: List[Observation], old_extractions: Extractions) -> Tuple[Mapping[str, float], Extractions]:
+		# Check for a manual intent
 		for observation in observations:
-			if isinstance(observation, IntentObservation) or isinstance(observation, MessageObservation):
-				if observation.has_intent(self._trigger_name):
-					# Kickoff condition seen
-					# Try the first payment method
-					payment = get_payment_method() #Extractions
-					return ({self._trigger_name: 1.0}, 0.0, payment)
+			if isinstance(observation, IntentObservation):
+				if observation.has_intent("payment"):
+					payment = get_payment_method()
+					extractions = Extractions()
+					extractions.add_extraction("PAYMENT", payment)
+					return ({"payment": 1.0}, extractions)
 		# No kickoff
-		return ({}, 1.0, Extractions())
+		return ({"payment": 0.0}, Extractions())
 
-class EAccountTriggerDetector(TriggerDetector):
+class TransitionPaymentTriggerDetector(TriggerDetector):
 
-	def __init__(self, trigger_name="e_account"):
-		self._trigger_name = trigger_name
+	def __init__(self, detector_name="transition_account"):
+		self._detector_name = detector_name
       
 	@property
 	def trigger_names(self) -> List[str]:
-		return ["account"]
+		return ["yes_payment", "no_payment", "no_but_try_payment", "no_but_other_payment", "signup_success", "signup_fail", "account"]
 
-	def trigger_probabilities(self, observations: List[Observation], old_extractions: Extractions) -> Tuple[Mapping[str, float], float, Extractions]:
-		for observation in observations:
-			if isinstance(observation, MessageObservation):
-				account = check_for_e_account(observation.text)
-				if account:
-					extraction = Extractions()
-					extraction.add_extraction("account", account)
-					return ({"account": 1.0}, 0.0, extraction)
-		return ({}, 1.0, Extractions())
-    
-class AskPaymentTriggerDetector(TriggerDetector):
-	def __init__(self, trigger_name="ask_payment_response"):
-		self._trigger_name = trigger_name
+	def trigger_probabilities(self, observations: List[Observation], old_extractions: Extractions) -> Tuple[Mapping[str, float], Extractions]:
+		preprocess_observation(observations, old_extractions)
+		trigger_map_out = {}
+		extractions = Extractions()
 
-	@property
-	def trigger_names(self) -> List[str]:
-		return ["yes_payment", "no_payment", "no_but_other_payment", "no_but_try_payment"]
+		# For each trigger
+		other_payment = None
+		account = None
+		for trigger in self.trigger_names:
+			if trigger == "account":
+				# Only check unigram + bigram of the whole message which is the first observation
+				trigger_map_out[trigger], account = get_regex_score(observations[0].text) #binary score: {0, 1}
+			elif trigger == "no_but_other_payment":
+				# Only check unigram + bigram of the whole message which is the first observation
+				trigger_map_out[trigger], other_payment = get_ngram_score(observations[0].text) #binary score: {0, 1}
+			else:
+				trigger_map_out[trigger] = get_entailment_score(premises[trigger], observations)
 
-	def trigger_probabilities(self, observations: List[Observation], old_extractions: Extractions) -> Tuple[Mapping[str, float], float, Extractions]:
-		for observation in observations:
-			if isinstance(observation, MessageObservation) and old_extractions.has_extraction("PAYMENT"):
-				response, extraction = check_for_ask_payment(observation.text, old_extractions.extraction("PAYMENT"))
-				if response != "NOT_DETECT":
-					if response == "no_payment":
-						#extraction is next_payment
-						return ({response: 1.0}, 0.0, extraction) if extraction else ({}, 1.0, Extractions()) #else: already tried every payment method
-					elif response == "no_but_try_payment":
-						#extraction is signup_link
-						return ({response: 1.0}, 0.0, extraction)
-					elif response == "no_but_other_payment":
-						#extraction is other_payment
-						return ({response: 1.0}, 0.0, extraction)
-					else:
-						return ({response: 1.0}, 0.0, Extractions())
-		return ({}, 1.0, Extractions())
+		# Since multiple triggers may overlap in term of semantic and yield high trigger scores (> extraction_threshold), 
+		# we only choose the max score from either one of them and zero out the rest to avoid low trigger probability scores after normalization.
+		# image we have two large scores and then we normalize them to (0, 1) scale then
+		# suddenly both normalized scores (which previously are large) become less by large fraction
+		candidates = []
+		max_score = 0
+		winner = None
+		for trigger in self.trigger_names:
+			if trigger_map_out[trigger] > extraction_threshold:
+				candidates.append(trigger)
+				if trigger_map_out[trigger] > max_score:
+					max_score = trigger_map_out[trigger]
+					winner = trigger
 
-class SignupTriggerDetector(TriggerDetector):
+		# If winner is no_payment, we need PAYMENT extraction
+		if winner == "no_payment":
+			next_payment = get_payment_method()
+			extractions.add_extraction("PAYMENT", next_payment) #If None: then we will disregard its action in irc_pydle.py/mydemo.py
+		# If winner is no_but_try_payment, we need SIGNUP_INFO extraction
+		elif winner == "no_but_try_payment":
+			signup_link = get_signup_link()
+			extractions.add_extraction("SIGNUP_INFO", signup_link)
+		# If winner is no_but_other_payment, we need PAYMENT extraction
+		elif winner == "no_but_other_payment":
+			extractions.add_extraction("OTHER_PAYMENT", other_payment)
+		# If winner is account, we need account extraction
+		elif winner == "account":
+			extractions.add_extraction("account", account)
+		# If winner is signup_fail, we need PAYMENT extraction
+		elif trigger == "signup_fail":
+			next_payment = get_payment_method()
+			extractions.add_extraction("PAYMENT", next_payment) #If None: then we will disregard its action in irc_pydle.py/mydemo.py
 
-	def __init__(self, trigger_name="signup"):
-		self._trigger_name = trigger_name
-      
-	@property
-	def trigger_names(self) -> List[str]:
-		return ["signup_success", "signup_fail"]
-    
-	def trigger_probabilities(self, observations: List[Observation], old_extractions: Extractions) -> Tuple[Mapping[str, float], float, Extractions]:
-		for observation in observations:
-			if isinstance(observation, MessageObservation) and old_extractions.has_extraction("PAYMENT"):
-				response = check_for_signup(observation.text)
-				if response != "NOT_DETECT":
-					if response == "signup_fail":
-						next_payment = get_payment_method() #Extractions
-						return ({response: 1.0}, 0.0, next_payment) if next_payment else ({}, 1.0, Extractions()) #else: already tried every payment method
-					else:
-						return ({response: 1.0}, 0.0, Extractions())
-		return ({}, 1.0, Extractions())
+		# Now that we have a winner, we zero out other candidate's scores
+		for trigger in candidates:
+			if trigger != winner:
+				trigger_map_out[trigger] = 0.01
+
+		return (trigger_map_out, extractions)

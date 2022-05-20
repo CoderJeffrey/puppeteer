@@ -1,87 +1,70 @@
 from typing import Any, List, Mapping, Tuple
-from puppeteer import Extractions, IntentObservation, MessageObservation, Observation, TriggerDetector
-from .sentence_embedding import sentence_similarity
-from .nli import check_entailment
+from puppeteer import Extractions, IntentObservation, Observation, TriggerDetector
+# from .sentence_embedding import get_similarity_score
+from .nli import get_entailment_score
 
-premises_kickoff = [
-"You won a gift card",
-"Greeting! We would like to offer you a gift card. Reply now to claim your award",
-"We are sending you a gift card because you are our lucky winner. Please reply with your bank account and routing number to receive your gift card",
-"You won a gift card! Please provide your back account and routing number to credit your gift card"
-]
+extraction_threshold = 0.6
 
-premises_ship = [
-"We offer shipping and delivery",
-"Sure, we can ship the gift card",
-"The gift card can be shipped",
-"Certainly, we provide delivery for the gift card",
-"We can send the gift card",
-"Of course, we can deliver the gift card"
-]
+premises = {
+	"kickoff": [
+		"You won a gift card",
+		"Greeting! We would like to offer you a gift card. Reply now to claim your award",
+		"We are sending you a gift card because you are our lucky winner. Please reply with your bank account and routing number to receive your gift card",
+		"You won a gift card! Please provide your back account and routing number to credit your gift card"
+		],
+	"ship": [
+		"We offer shipping and delivery",
+		"Sure, we can ship the gift card",
+		"The gift card can be shipped",
+		"Certainly, we provide delivery for the gift card",
+		"We can send the gift card",
+		"Of course, we can deliver the gift card"
+		],
+	"cant_ship": [
+		"We do not offer shipping and delivery",
+		"Sorry, this gift card can not be shipped",
+		"We can not ship the gift card",
+		"We don't provide delivery for the gift card",
+		]
+}
 
-premises_cant_ship = [
-"We do not offer shipping and delivery",
-"Sorry, this gift card can not be shipped",
-"We can not ship the gift card",
-"We don't provide delivery for the gift card",
-]
+class KickOffShipmentTriggerDetector(TriggerDetector):
 
-def check_for_shipment(hypothesis):
-	#entailment: "ship"
-	if check_entailment(premises_ship, hypothesis):
-		return ("ship", Extractions()) 
+	def __init__(self, detector_name="kickoff_shipment"):
+		self._detector_name = detector_name
 
-	#entailment: "cant_ship"
-	if check_entailment(premises_cant_ship, hypothesis):
-		return ("cant_ship", Extractions()) 
-
-	#neutral
-	return None
-
-class ShipmentTriggerDetector(TriggerDetector):
-
-	def __init__(self, trigger_name="shipment"):
-		self._trigger_name = trigger_name
-      
 	@property
 	def trigger_names(self) -> List[str]:
-		return [self._trigger_name]
-    
-	def trigger_probabilities(self, observations: List[Observation], old_extractions: Extractions) -> Tuple[Mapping[str, float], float, Extractions]:
+		return ["shipment"]
+
+	def trigger_probabilities(self, observations: List[Observation], old_extractions: Extractions) -> Tuple[Mapping[str, float], Extractions]:
+		# Check for a manual intent
 		for observation in observations:
-			if isinstance(observation, IntentObservation) or isinstance(observation, MessageObservation):
-				if observation.has_intent(self._trigger_name):
-					# Kickoff condition seen: manual intent
-					return ({self._trigger_name: 1.0}, 0.0, Extractions())
-				if sentence_similarity(premises_kickoff, observation.text):
-					# Kickoff condition seen: semantic similarity
-					return ({self._trigger_name: 1.0}, 0.0, Extractions())
-		# No kickoff
-		return ({}, 1.0, Extractions())
+			if isinstance(observation, IntentObservation):
+				if observation.has_intent("shipment"):
+					return ({"shipment": 1.0}, Extractions())
+		# Check for an inference intent
+		similarity_score = get_entailment_score(premises["kickoff"], observations)
+		return ({"shipment": similarity_score}, Extractions())
 
-class ShipmentNliTriggerDetector(TriggerDetector):
+class TransitionShipmentTriggerDetector(TriggerDetector):
 
-	def __init__(self, trigger_name="nli"):
-		self._trigger_name = trigger_name
-      
+	def __init__(self, detector_name="transition_shipment"):
+		self._detector_name = detector_name
+
 	@property
 	def trigger_names(self) -> List[str]:
 		return ["ship", "cant_ship"]
-    
-	def trigger_probabilities(self, observations: List[Observation], old_extractions: Extractions) -> Tuple[Mapping[str, float], float, Extractions]:
-		for observation in observations:
-			if isinstance(observation, MessageObservation):
-				ans = check_for_shipment(observation.text)
-				if ans == None:
-					return ({}, 1.0, Extractions())	
-				response, extraction = ans
-				if response == "ship":
-					extraction = Extractions()
-					extraction.add_extraction("kickoff", {
-						"causal_trigger": "ship",
-						"kickoff_agenda": "get_payment",
-						"kickoff_trigger": "payment"})
-					return ({response: 1.0}, 0.0, extraction)
-				elif response == "cant_ship":
-					return ({response: 1.0}, 0.0, Extractions())
-		return ({}, 1.0, Extractions())	
+
+	def trigger_probabilities(self, observations: List[Observation], old_extractions: Extractions) -> Tuple[Mapping[str, float], Extractions]:
+		trigger_map_out = {}
+		extractions = Extractions()
+		for trigger in self.trigger_names:
+			trigger_map_out[trigger] = get_entailment_score(premises[trigger], observations)
+			if trigger == "ship" and trigger_map_out[trigger] > extraction_threshold:
+				extractions.add_extraction("kickoff", {
+					"causal_trigger": "ship",
+					"kickoff_agenda": "get_payment",
+					"kickoff_trigger": "payment"})
+
+		return (trigger_map_out, extractions)
