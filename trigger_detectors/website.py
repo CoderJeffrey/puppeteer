@@ -1,24 +1,18 @@
 import requests
-from typing import Any, List, Mapping, Tuple
-from puppeteer import Extractions, IntentObservation, MessageObservation, Observation, TriggerDetector
+from typing import List, Mapping, Tuple, Union
+from ..observation import Observation, MessageObservation
+from ..extractions import Extractions
+from ..trigger_detector import TriggerDetector
 from urlextract import URLExtract
-from .nli import get_entailment_score
 
 extractor = URLExtract()
 
-premises = {
-	"kickoff": [
-		"You won a gift card",
-		"Greeting! We would like to offer you a gift card. Reply now to claim your award",
-		"We are sending you a gift card because you are our lucky winner. Please reply with your bank account and routing number to receive your gift card",
-		"You won a gift card! Please provide your back account and routing number to credit your gift card"
-		]
-}
-
-def get_url_score(msg: str):
+def extract_url(msg: str) -> Union[Extractions, None]:
     extract_urls = extractor.find_urls(msg)
     if extract_urls:
         print('extracted urls: {}'.format(str(extract_urls)))
+        valid_url = []
+        invalid_url = []
         for i, url in enumerate(extract_urls):
             if "http" not in url:
                 url = "http://" + url
@@ -26,45 +20,44 @@ def get_url_score(msg: str):
                 request_response = requests.head(url)
                 if request_response.status_code == 404:
                     print("{}) {} is valid but not reachable.".format(i, url))
-                    return {"valid_url": 0, "invalid_url": 1}
+                    invalid_url.append(url)
                 else:
                     print("{}) {} is valid and reachable.".format(i, url))
-                    return {"valid_url": 1, "invalid_url": 0}
+                    valid_url.append(url)
             except:
                 print("{}) is invalid.".format(i, url))
-                return {"valid_url": 0, "invalid_url": 1}
+                invalid_url.append(url)
+
+        extractions = Extractions()
+        if valid_url:
+            extractions.add_extraction("valid_url", valid_url)
+        if invalid_url:
+            extractions.add_extraction("invalid_url", invalid_url)
+        return extractions
     else:
-        return {"valid_url": 0, "invalid_url": 0}
+        return None
 
-class KickOffWebsiteTriggerDetector(TriggerDetector):
+class URLWebsiteTriggerDetector(TriggerDetector):
 
-	def __init__(self, detector_name="kickoff_website"):
-		self._detector_name = detector_name
+    def __init__(self, detector_name="url"):
+        self._detector_name = detector_name
 
-	@property
-	def trigger_names(self) -> List[str]:
-		return ["website"]
+    @property
+    def trigger_names(self) -> List[str]:
+        return ["valid_url", "invalid_url"]
 
-	def trigger_probabilities(self, observations: List[Observation], old_extractions: Extractions) -> Tuple[Mapping[str, float], Extractions]:
-		# Check for a manual intent
-		for observation in observations:
-			if isinstance(observation, IntentObservation):
-				if observation.has_intent("website"):
-					return ({"website": 1.0}, Extractions())
-		# Check for an inference intent
-		similarity_score = get_entailment_score(premises["kickoff"], observations)
-		return ({"website": similarity_score}, Extractions())
+    def trigger_probabilities(self, observations: List[Observation], old_extractions: Extractions) -> Tuple[Mapping[str, float], Extractions]:
+        extractions = Extractions()
+        # Assume we have only one observation
+        if isinstance(observations[0], MessageObservation):
+            ext = extract_url(observations[0].text) #binary score: {0, 1}
+            if ext:
+                extractions.update(ext)
 
-class TransitionWebsiteTriggerDetector(TriggerDetector):
+        if extractions.has_extraction("valid_url"):
+            return ({"valid_url": 1.0, "invalid_url": 0.0}, extractions)
+        elif extractions.has_extraction("invalid_url"):
+            return ({"valid_url": 0.0, "invalid_url": 1.0}, extractions)
+        else:
+            return ({"valid_url": 0.0, "invalid_url": 0.0}, extractions)
 
-	def __init__(self, detector_name="transition_website"):
-		self._detector_name = detector_name
-
-	@property
-	def trigger_names(self) -> List[str]:
-		return ["valid_url", "invalid_url"]
-
-	def trigger_probabilities(self, observations: List[Observation], old_extractions: Extractions) -> Tuple[Mapping[str, float], Extractions]:
-		# Only extract a url from the whole message which is the first observation
-		trigger_map_out = get_url_score(observations[0].text) #binary score: {0, 1}
-		return (trigger_map_out, Extractions())

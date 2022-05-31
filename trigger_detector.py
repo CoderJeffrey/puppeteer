@@ -1,13 +1,29 @@
 import abc
 import os
+import errno
 from typing import Dict, List, Optional, Tuple
 
 from .extractions import Extractions
-from .nlu import SnipsEngine, SpacyEngine
+from .nli import NLIEngine
+from .nlu import SnipsEngine, SpacyNLUEngine
 from .observation import Observation, MessageObservation
 
+# See if this is a standard NLI trigger.
+def lookfor_nli(trigger_name: str, agenda_name: str, rootpath: str) -> Optional[str]:
+    filename = trigger_name + ".txt"
+    agenda_training_data_path = os.path.join(rootpath, agenda_name)
+    if not os.path.isdir(agenda_training_data_path):
+        raise FileNotFoundError(
+            errno.ENOENT, os.strerror(errno.ENOENT), agenda_training_data_path)
+
+    for f in os.listdir(agenda_training_data_path):
+        if filename == f:
+            return os.path.join(agenda_training_data_path, f)
+
+    return None
+
 # See if this is a standard Snips trigger.
-def lookfor(trigger_name: str, agenda_name: str, rootpath: str) -> Optional[str]:
+def lookfor_snips(trigger_name: str, agenda_name: str, rootpath: str) -> Optional[str]:
     agenda_training_data_path = os.path.join(rootpath, agenda_name)
     if not os.path.isdir(agenda_training_data_path):
         raise FileNotFoundError(
@@ -61,7 +77,7 @@ class TriggerDetector(abc.ABC):
     @abc.abstractmethod
     # TODO Use class TriggerProbabilities (or similar) as output?
     def trigger_probabilities(self, observations: List[Observation],
-                              old_extractions: Extractions) -> Tuple[Dict[str, float], float, Extractions]:
+                              old_extractions: Extractions) -> Tuple[Dict[str, float], Extractions]:
         """Returns trigger probabilities and extractions, based on observations and previous extractions.
         
         The returned probabilities are measures of how strongly the detector believes that different triggers are
@@ -81,7 +97,6 @@ class TriggerDetector(abc.ABC):
             - New extractions made by the detector.
         """
         raise NotImplementedError()
-
 
 class SnipsTriggerDetector(TriggerDetector):
     """Class detecting triggers in observations, using Snips.
@@ -103,14 +118,14 @@ class SnipsTriggerDetector(TriggerDetector):
     See the documentation in TriggerDetector for further information.
     """
 
-    def __init__(self, paths: List[str], nlp: SpacyEngine, multi_engine: bool = False) -> None:
+    def __init__(self, paths: List[str], nlp: SpacyNLUEngine, multi_engine: bool = False) -> None:
         """Initializes a newly created SnipsTriggerEngine.
         
         Args:
             paths: This is a list of directory paths pointing to the training data. For each directory, the leafs of
                 the sub-directory tree should be intent data formatted as outlined in the class documentation above.
                 The created detector will detect all intents found under these paths.
-            nlp: This is a SpacyEngine, used by the detector to perform internal tasks.
+            nlp: This is a SpacyNLUEngine, used by the detector to perform internal tasks.
             multi_engine: This flags controls the choice between single-engine and multi-engine mode. The default is
                 single-engine.
         """
@@ -133,8 +148,9 @@ class SnipsTriggerDetector(TriggerDetector):
         for paths in self._paths_list:
             #print(paths)
             engine = SnipsEngine.load(paths, self._nlp)
-            self._engines.append(engine)
-            self._trigger_names.extend(engine.intent_names)
+            if engine:
+                self._engines.append(engine)
+                self._trigger_names.extend(engine.intent_names)
     
     @property
     def trigger_names(self) -> List[str]:
@@ -142,7 +158,7 @@ class SnipsTriggerDetector(TriggerDetector):
         return list(self._trigger_names)
 
     def trigger_probabilities(self, observations: List[Observation],
-                              old_extractions: Extractions) -> Tuple[Dict[str, float], float, Extractions]:
+                              old_extractions: Extractions) -> Tuple[Dict[str, float], Extractions]:
         """Returns trigger probabilities and extractions, based on observations and previous extractions.
 
         See documentation of the corresponding method in TriggerDetector.
@@ -174,6 +190,63 @@ class SnipsTriggerDetector(TriggerDetector):
 
         return trigger_map, Extractions()
 
+class NLITriggerDetector:
+    """Class detecting triggers in observations, using NLI.
+    """
+
+    def __init__(self, paths: Dict[str, str], high_score_threshold: float = 0.6) -> None:
+        """Initializes a newly created NLITriggerEngine.
+        
+        Args:
+            paths: This is a list of file paths pointing to the NLI premise data
+            high_score_threshold: use for determining whether or not the detected confidence score is high
+        """
+        self._engine: NLIEngine = NLIEngine(paths)
+        self._trigger_names: List[str] = self._engine.trigger_names
+        self._high_score_threshold = high_score_threshold
+        
+    @property
+    def trigger_names(self) -> List[str]:
+        """Returns the names of the triggers detected by this trigger detector."""
+        return list(self._trigger_names)
+
+    def trigger_probabilities(self, observations: List[Observation],
+                              old_extractions: Extractions) -> Tuple[Dict[str, float], Extractions]:
+        """Returns trigger probabilities and extractions, based on observations and previous extractions.
+        """
+        messages = []
+        for observation in observations:
+            if isinstance(observation, MessageObservation):
+                messages.append(observation.text.strip())
+        message = " ".join(messages)
+
+        trigger_map: Dict[str, float] = {}
+        nli_results: List[Tuple[str, float, str]] = self._engine.detect(message)
+                    
+        # Since multiple triggers may overlap in term of semantic and yield high confidence scores
+        # resulting in low probability scores after normalization
+        # To avoid this, we only choose the highest confidence score from those triggers whose confidence scores
+        # are considered high (> high_score_threshold) and zero out the rest 
+        # image a screnario where we have two large scores and then we normalize them to (0, 1) scale then
+        # suddenly both normalized scores (which previously are large) become less by large fraction
+
+        candidates = [] # triggers whose confidences are greater than high_score_threshold
+        max_score = 0
+        winner = ""
+        for trigger_name, score, sent in nli_results:
+            trigger_map[trigger_name] = score
+            if score > self._high_score_threshold:
+                candidates.append(trigger_name)
+                if score > max_score:
+                    max_score = score
+                    winner = trigger_name
+
+        # Now that we have a winner, zero out (0.01) other candidate's scores
+        for trigger_name in candidates:
+            if trigger_name != winner:
+                trigger_map[trigger_name] = 0.01
+
+        return trigger_map, Extractions()
 
 class TriggerDetectorLoader:
     """Class loading trigger detectors from disk.
@@ -205,13 +278,15 @@ class TriggerDetectorLoader:
     detection. The load() method makes sure that this takes place, by calling the load() method on any TriggerDetector
     object that it returns.
     """
-    def __init__(self, default_snips_path: Optional[str] = None) -> None:
+    def __init__(self, default_nli_path: Optional[str] = None, default_snips_path: Optional[str] = None) -> None:
         """Initializes a newly created TriggerDetectorLoader.
 
         Args:
             default_snips_path: The default root path used to load SNIPS-based trigger detectors.
         """
+        self._default_nli_path = default_nli_path
         self._default_snips_path = default_snips_path
+        self._nli_paths: Dict[str, str] = {}
         self._snips_paths: Dict[str, str] = {}
         self._registered: Dict[str, TriggerDetector] = {}
         self._registered_by_agenda: Dict[str, Dict[str, TriggerDetector]] = {}
@@ -237,6 +312,15 @@ class TriggerDetectorLoader:
             self._registered_by_agenda[agenda_name] = {}
         for trigger_name in detector.trigger_names:
             self._registered_by_agenda[agenda_name][trigger_name] = detector
+
+    def register_nli_path_for_agenda(self, agenda_name: str, nli_path: str) -> None:
+        """Register a path to NLI triggers used by a single agenda.
+
+        Args:
+            agenda_name: The name of the agenda.
+            snips_path: The path to the SNIPS intents.
+        """
+        self._nli_paths[agenda_name] = nli_path
     
     def register_snips_path_for_agenda(self, agenda_name: str, snips_path: str) -> None:
         """Register a path to SNIPS intents used by a single agenda.
@@ -262,41 +346,71 @@ class TriggerDetectorLoader:
         """
         detectors = []
         snips_trigger_paths = []
+        nli_trigger_paths: Dict[str, str] = {} #{trigger_name: path}
         for trigger_name in trigger_names:
             #print(trigger_name)
             if (agenda_name in self._registered_by_agenda and
                     trigger_name in self._registered_by_agenda[agenda_name]):
                 print("1) CUSTOM Trigger: {}, is registered for agenda, {}.".format(trigger_name, agenda_name))
                 detector = self._registered_by_agenda[agenda_name][trigger_name]
-                detector.load()
+                #detector.load()
                 detectors.append(detector)
             elif trigger_name in self._registered:
                 print("2) CUSTOM Trigger: {}, is registered for any agendas.".format(trigger_name))
                 detector = self._registered[trigger_name]
-                detector.load()
+                #detector.load()
                 detectors.append(detector)
             else:
-                if agenda_name in self._snips_paths:
-                    path = lookfor(trigger_name, agenda_name, self._snips_paths[agenda_name])
+                # NLI standard detector
+                if agenda_name in self._nli_paths:
+                    path = lookfor_nli(trigger_name, agenda_name, self._nli_paths[agenda_name])
                     if path is not None:
-                        snips_trigger_paths.append(path)
-                elif self._default_snips_path is not None:
-                    path = lookfor(trigger_name, agenda_name, self._default_snips_path)
+                        nli_trigger_paths[trigger_name] = path
+                        print("3) NLI Trigger: {}, for agenda {} at {}".format(trigger_name, agenda_name, path))
+                elif self._default_nli_path is not None:
+                    path = lookfor_nli(trigger_name, agenda_name, self._default_nli_path)
                     if path is not None:
-                        snips_trigger_paths.append(path)
+                        nli_trigger_paths[trigger_name] = path
+                        print("3) NLI Trigger: {}, for agenda {} at {}".format(trigger_name, agenda_name, path))
                     else:
-                        raise ValueError("Could not find detector for trigger: %s" % trigger_name)
-                print("3) SNIPS Trigger: {}, for agenda {} at {}".format(trigger_name, agenda_name, path))
+                        raise ValueError("Could not find NLI detector for trigger: %s" % trigger_name)
+                # SNIPS standard detector
+                if agenda_name in self._snips_paths:
+                    path = lookfor_snips(trigger_name, agenda_name, self._snips_paths[agenda_name])
+                    if path is not None:
+                        snips_trigger_paths.append(path)
+                        print("4) SNIPS Trigger: {}, for agenda {} at {}".format(trigger_name, agenda_name, path))
+                elif self._default_snips_path is not None:
+                    path = lookfor_snips(trigger_name, agenda_name, self._default_snips_path)
+                    if path is not None:
+                        snips_trigger_paths.append(path)
+                        print("4) SNIPS Trigger: {}, for agenda {} at {}".format(trigger_name, agenda_name, path))
+                    else:
+                        raise ValueError("Could not find SNIPS detector for trigger: %s" % trigger_name)
+
+        # Get standard NLI trigger detectors.
         #print(6)
-        #print(snips_trigger_paths)
+        #print(nli_trigger_paths)
+        if nli_trigger_paths:
+            detector = NLITriggerDetector(nli_trigger_paths)
+            if detector.trigger_names:
+                # This detector is responsible to detect some triggers
+                print("NLI trigger detector: {}".format(detector.trigger_names))
+                detectors.append(detector)
+
         # Get standard Snips trigger detectors.
+        #print(7)
+        #print(snips_trigger_paths)
         if snips_trigger_paths:
-            nlp = SpacyEngine.load()
+            nlp = SpacyNLUEngine.load()
             detector = SnipsTriggerDetector(snips_trigger_paths,
                                             nlp,
                                             multi_engine=snips_multi_engine)
             detector.load()
-            detectors.append(detector)
+            if detector.trigger_names:
+            # This detector is responsible to detect some triggers
+                print("SNIPS trigger detector: {}".format(detector.trigger_names))
+                detectors.append(detector)
 
         # Return unique detectors
         return list(set(detectors))

@@ -1,23 +1,23 @@
 import json
 from os import walk
 from os.path import basename, join
-from typing import Any, Dict, FrozenSet, Generator, List, Tuple
+from typing import Any, Dict, FrozenSet, Generator, List, Tuple, Union
 
 from snips_nlu import SnipsNLUEngine  # type: ignore
 from snips_nlu.default_configs import CONFIG_EN  # type: ignore
 import spacy
 
 
-class SpacyEngine:
+class SpacyNLUEngine:
     """Wrapper around a Spacy model."""
 
-    _engines: Dict[str, "SpacyEngine"] = dict()
+    _engines: Dict[str, "SpacyNLUEngine"] = dict()
 
     def __init__(self, model: str) -> None:
-        """Initializes a new SpacyEngine using the given language model.
+        """Initializes a new SpacyNLUEngine using the given language model.
 
         This method is only intended for class-internal use. For external
-        code getting access to a SpacyEngine, the load() method should be
+        code getting access to a SpacyNLUEngine, the load() method should be
         used.
 
         Args:
@@ -26,8 +26,8 @@ class SpacyEngine:
         self._nlp = spacy.load(model)
 
     @classmethod
-    def load(cls, model: str = 'en_core_web_lg') -> "SpacyEngine":
-        """Load a SpacyEngine using the given language model.
+    def load(cls, model: str = 'en_core_web_lg') -> "SpacyNLUEngine":
+        """Load a SpacyNLUEngine using the given language model.
 
         Args:
             model: Name of the Spacy language model to use.
@@ -36,7 +36,7 @@ class SpacyEngine:
             An engine using the specified language model.
         """
         if model not in cls._engines:
-            cls._engines[model] = SpacyEngine(model)
+            cls._engines[model] = SpacyNLUEngine(model)
         return cls._engines[model]
 
     def get_sentences(self, text: str) -> List[str]:
@@ -145,7 +145,7 @@ class SnipsEngine:
 
     _engines: Dict[FrozenSet[str], "SnipsEngine"] = dict()
 
-    def __init__(self, engine: SnipsNLUEngine, intent_names: List[str], nlp: SpacyEngine) -> None:
+    def __init__(self, engine: SnipsNLUEngine, intent_names: List[str], nlp: SpacyNLUEngine) -> None:
         """Initialize a new SnipsEngine.
 
         This method is only intended for class-internal use. For external
@@ -155,14 +155,14 @@ class SnipsEngine:
         Args:
             engine: The wrapped Snips engine.
             intent_names: The intent names the engine detects.
-            nlp: A SpacyEngine used internally to split text into sentences.
+            nlp: A SpacyNLUEngine used internally to split text into sentences.
         """
         self._engine = engine
         self._intent_names = intent_names
         self._nlp = nlp
 
     @classmethod
-    def load(cls, path_list: List[str], nlp: SpacyEngine) -> "SnipsEngine":
+    def load(cls, path_list: List[str], nlp: SpacyNLUEngine) -> Union["SnipsEngine", None]:
         """Load a SnpisEngine trained on data stored at the given path.
 
         Refer to the documentation of class SnipsTriggerDetector for details
@@ -170,7 +170,7 @@ class SnipsEngine:
 
         Args:
             path_list: List of root paths where training data is located.
-            nlp: A SpacyEngine used internally to split text into sentences.
+            nlp: A SpacyNLUEngine used internally to split text into sentences.
 
         Returns:
             An engine trained on the given data.
@@ -189,11 +189,14 @@ class SnipsEngine:
             # The intent name is the name of the leaf folder
             intent_names = [basename(p) for p in paths]
             #print(paths, filenames, intent_names)
-            cls._engines[paths] = cls.train(filenames, intent_names, nlp)
-        return cls._engines[paths]
+            engine = cls.train(filenames, intent_names, nlp)
+            if engine:
+                # if engine is not None: not all training data files are empty
+                cls._engines[paths] = engine
+        return cls._engines[paths] if paths in cls._engines else None
 
     @classmethod
-    def train(cls, filenames: List[str], intent_names: List[str], nlp: SpacyEngine) -> "SnipsEngine":
+    def train(cls, filenames: List[str], intent_names: List[str], nlp: SpacyNLUEngine) -> Union["SnipsEngine", None]:
         """Create and train a SnipsEngine on given data.
 
         Refer to the documentation of class SnipsTriggerDetector for details
@@ -202,35 +205,52 @@ class SnipsEngine:
         Args:
             filenames: List of paths to files to use as training data.
             intent_names: The intent names the created engine detects.
-            nlp: A SpacyEngine used internally by the created engine to split text into sentences.
+            nlp: A SpacyNLUEngine used internally by the created engine to split text into sentences.
 
         Returns:
             An engine trained on the given data.
         """
-        json_dict: Dict[str, Any] = {"intents": {}}
+        #print(filenames, intent_names)
+        json_dict: Dict[str, Any] = {}
+        json_dict["intents"] = {}
+        json_dict["entities"] = {}
+        json_dict["language"] = "en"
         for filename in filenames:
-            skillname = filename.replace('.txt', '').replace('-', '')
-            skillname = basename(skillname)
-            json_dict["intents"][skillname] = {}
-            json_dict["intents"][skillname]["utterances"] = []
+            texts = []
             with open(filename, "r") as f:
                 filetxt = f.read()
             for txt in filetxt.split('\n'):
                 if txt.strip() != "":
-                    udic: Dict[str, List[Dict[str, str]]] = {"data": []}
-                    udic["data"].append({"text": txt})
-                    json_dict["intents"][skillname]["utterances"].append(udic)
-        json_dict["entities"] = {}
-        json_dict["language"] = "en"
+                    texts.append(txt.strip())
+
+            # skip if it is an empty text file
+            if len(texts) == 0:
+                continue
+                 
+            skillname = filename.replace('.txt', '').replace('-', '')
+            skillname = basename(skillname)
+            json_dict["intents"][skillname] = {}
+            json_dict["intents"][skillname]["utterances"] = []
+
+            for txt in texts:
+                udic: Dict[str, List[Dict[str, str]]] = {"data": []}
+                udic["data"].append({"text": txt})
+                json_dict["intents"][skillname]["utterances"].append(udic)
+        #print(json_dict)
         '''
         with open("example.json", "w") as out_file:
             json.dump(json_dict, out_file, indent=4)
         '''
+        # if all training files for the intents are empty => no engine
+        if len(json_dict["intents"]) == 0:
+            return None
+
+        valid_intent_names: List[str] = list(json_dict["intents"].keys())
         json_data = json.loads(json.dumps(json_dict, sort_keys=False))
 
         engine = SnipsNLUEngine(config=CONFIG_EN)
         engine.fit(json_data)
-        return cls(engine, intent_names, nlp)
+        return cls(engine, valid_intent_names, nlp)
 
     @property
     def intent_names(self) -> List[str]:

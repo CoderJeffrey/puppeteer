@@ -1,9 +1,6 @@
 import abc
 from typing import List, Dict, Tuple, Type
 
-import re
-import string
-import spacy
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -367,7 +364,7 @@ class Puppeteer:
     """
 
     def __init__(self, agendas: List[Agenda],
-                 policy_cls: Type[PuppeteerPolicy] = DefaultPuppeteerPolicy,
+                 policy_cls: Type[DefaultPuppeteerPolicy] = DefaultPuppeteerPolicy,
                  plot_state: bool = False) -> None:
         """Initialize a new Puppeteer.
 
@@ -394,7 +391,7 @@ class Puppeteer:
         self._log = Logger()
 
     @property
-    def log(self) -> str:
+    def log(self):
         """Returns a log string from the latest call to react().
 
         The log string contains information that is helpful in understanding the inner workings of the puppeteer -- why
