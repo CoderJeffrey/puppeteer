@@ -294,7 +294,6 @@ class AgendaState:
                observations: List[Observation],
                old_extractions: Extractions,
                active_agendas: Dict[str, "Agenda"],
-               kicked_off_agendas: Dict[str, "Agenda"]
                ) -> Extractions:
         """Updates the agenda-level state.
 
@@ -315,13 +314,10 @@ class AgendaState:
             new_extractions = self._kickoff_trigger_probabilities.update(observations, old_extractions)
             self._log.end()
 
-        elif self._agenda.name in kicked_off_agendas: #if this agenda has been kicked-off, check for transition triggers
+        else: #if this agenda has been active, check for transition triggers
             self._log.begin("Transition trigger probabilities")
             new_extractions = self._transition_trigger_probabilities.update(observations, old_extractions)
             self._log.end()
-
-        else: #this agenda is active but not kicked-off yet ==> do nothing
-            return Extractions()
 
         self._log.begin("State probabilities")
         self._state_probabilities.update(self._transition_trigger_probabilities, actions)
@@ -732,7 +728,7 @@ class AgendaPolicy(abc.ABC):
 
     @abc.abstractmethod    
     def pick_actions(self, state: AgendaState, action_history: List[Action],
-                     turns_without_progress: int, extractions: Extractions) -> List[Action]:
+                     turns_without_progress: int) -> List[Action]:
         """Picks zero or more appropriate actions to take, given the current state of the agenda.
 
         Args:
@@ -934,7 +930,7 @@ class DefaultAgendaPolicy(AgendaPolicy):
         return 1.0 - non_kickoff_probability >= self._kickoff_thresh
 
     def pick_actions(self, state: AgendaState, action_history: List[Action],
-                     turns_without_progress: int, extractions: Extractions) -> List[Action]:
+                     turns_without_progress: int) -> List[Action]:
         """Picks zero or more appropriate actions to take, given the current state of the agenda.
 
         Args:
@@ -968,11 +964,6 @@ class DefaultAgendaPolicy(AgendaPolicy):
                 self._log.add(f"State {st} is the most likely state that has actions defined.")
                 for action_name in action_map[st]:
                     action = self._agenda.action(action_name)
-                    # check if action._text has "PLACEHOLDER" that should be filled by extractions["PLACEHOLDER"]
-                    # "PLACEHOLDER" is always uppercase
-                    # for extr in extractions.names:
-                    #     if extr.isupper():
-                    #         action._text = action._text.replace(extr, extractions.extraction(extr)) 
                     exclusive_flag = action.exclusive_flag
                     allowed_repeats = action.allowed_repeats
                     
@@ -998,11 +989,6 @@ class DefaultAgendaPolicy(AgendaPolicy):
                     if st in self._agenda.stall_action_map:
                         for action_name in self._agenda.stall_action_map[st]:
                             action = self._agenda.action(action_name)
-                            # check if action._text has "PLACEHOLDER" that should be filled by extractions["PLACEHOLDER"]
-                            # "PLACEHOLDER" is always uppercase
-                            # for extr in extractions.names:
-                            #     if extr.isupper():
-                            #         action._text.replace(extr, extractions.extraction(extr)) 
                             allowed_repeats = action.allowed_repeats
                             
                             num_times_action_was_used = action_history.count(action)

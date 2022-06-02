@@ -34,7 +34,8 @@ class MyTriggerDetectorLoader(TriggerDetectorLoader):
             # self.register_detector_for_agenda("get_payment", EAccountTriggerDetector("e_account"))
             # self.register_detector_for_agenda("get_payment", AskPaymentTriggerDetector("ask_payment_response"))
             # self.register_detector_for_agenda("get_payment", SignupTriggerDetector("signup"))
-            pass
+            self.register_detector_for_agenda("get_payment", AccountPaymentTriggerDetector())
+            self.register_detector_for_agenda("get_payment", OtherPaymentTriggerDetector())
 
         '''
         # Used by get_location

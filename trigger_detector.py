@@ -194,16 +194,14 @@ class NLITriggerDetector:
     """Class detecting triggers in observations, using NLI.
     """
 
-    def __init__(self, paths: Dict[str, str], high_score_threshold: float = 0.6) -> None:
+    def __init__(self, paths: Dict[str, str]) -> None:
         """Initializes a newly created NLITriggerEngine.
         
         Args:
             paths: This is a list of file paths pointing to the NLI premise data
-            high_score_threshold: use for determining whether or not the detected confidence score is high
         """
         self._engine: NLIEngine = NLIEngine(paths)
         self._trigger_names: List[str] = self._engine.trigger_names
-        self._high_score_threshold = high_score_threshold
         
     @property
     def trigger_names(self) -> List[str]:
@@ -218,33 +216,21 @@ class NLITriggerDetector:
         for observation in observations:
             if isinstance(observation, MessageObservation):
                 messages.append(observation.text.strip())
-        message = " ".join(messages)
+        message = " ".join(messages).lower() # make sure all text is lowercase
 
         trigger_map: Dict[str, float] = {}
         nli_results: List[Tuple[str, float, str]] = self._engine.detect(message)
-                    
-        # Since multiple triggers may overlap in term of semantic and yield high confidence scores
-        # resulting in low probability scores after normalization
-        # To avoid this, we only choose the highest confidence score from those triggers whose confidence scores
-        # are considered high (> high_score_threshold) and zero out the rest 
-        # image a screnario where we have two large scores and then we normalize them to (0, 1) scale then
-        # suddenly both normalized scores (which previously are large) become less by large fraction
+        detected_trigger_name, max_score, detected_sent = max(nli_results, key=lambda x: x[1])
+        print("NLI detector: {}, detected_trigger_name: {}, max score: {}, detected_sent: {}". \
+                format(self.trigger_names, detected_trigger_name, max_score, detected_sent))
 
-        candidates = [] # triggers whose confidences are greater than high_score_threshold
-        max_score = 0
-        winner = ""
-        for trigger_name, score, sent in nli_results:
-            trigger_map[trigger_name] = score
-            if score > self._high_score_threshold:
-                candidates.append(trigger_name)
-                if score > max_score:
-                    max_score = score
-                    winner = trigger_name
-
-        # Now that we have a winner, zero out (0.01) other candidate's scores
-        for trigger_name in candidates:
-            if trigger_name != winner:
-                trigger_map[trigger_name] = 0.01
+        # We only interested in the trigger with the highest score
+        # Thus, we zero out other trigger's scores
+        for trigger_name, score, _ in nli_results:
+            if trigger_name == detected_trigger_name:
+                trigger_map[trigger_name] = max_score
+            else:
+                trigger_map[trigger_name] = 0
 
         return trigger_map, Extractions()
 
